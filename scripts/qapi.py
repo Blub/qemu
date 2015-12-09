@@ -39,6 +39,8 @@ builtin_types = {
 
 # Whitelist of commands allowed to return a non-dictionary
 returns_whitelist = [
+    'get_link_status',
+
     # From QMP:
     'human-monitor-command',
     'qom-get',
