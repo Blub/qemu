@@ -116,6 +116,7 @@ typedef struct VmaDeviceInfo {
 
 VmaWriter *vma_writer_create(const char *filename, uuid_t uuid, Error **errp);
 int vma_writer_close(VmaWriter *vmaw, Error **errp);
+void vma_writer_error_propagate(VmaWriter *vmaw, Error **errp);
 void vma_writer_destroy(VmaWriter *vmaw);
 int vma_writer_add_config(VmaWriter *vmaw, const char *name, gpointer data,
                           size_t len);
