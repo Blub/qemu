@@ -1771,6 +1771,29 @@ Example:
 EQMP
 
     {
+        .name       = "get_link_status",
+        .args_type  = "name:s",
+        .mhandler.cmd_new = qmp_marshal_input_get_link_status,
+    },
+
+SQMP
+get_link_status
+--------
+
+Get the link status of a network adapter.
+
+Arguments:
+
+- "name": network device name (json-string)
+
+Example:
+
+-> { "execute": "get_link_status", "arguments": { "name": "e1000.0" } }
+<- { "return": {1} }
+
+EQMP
+
+    {
         .name       = "getfd",
         .args_type  = "fdname:s",
         .params     = "getfd name",
