@@ -258,7 +258,7 @@ vma_queue_write(VmaWriter *vmaw, const void *buf, size_t bytes)
     }
 
     vmaw->co_writer = NULL;
-    
+
     return (done == bytes) ? bytes : -1;
 }
 
@@ -382,10 +382,6 @@ static int coroutine_fn vma_write_header(VmaWriter *vmaw)
     time_t ctime = time(NULL);
     head->ctime = GUINT64_TO_BE(ctime);
 
-    if (!vmaw->stream_count) {
-        return -1;
-    }
-
     for (i = 0; i < VMA_MAX_CONFIGS; i++) {
         head->config_names[i] = GUINT32_TO_BE(vmaw->config_names[i]);
         head->config_data[i] = GUINT32_TO_BE(vmaw->config_data[i]);
@@ -502,6 +498,23 @@ static int vma_count_open_streams(VmaWriter *vmaw)
     return open_drives;
 }
 
+
+/**
+ * You need to call this if the vma archive does not contain
+ * any data stream.
+ */
+int coroutine_fn
+vma_writer_flush_output(VmaWriter *vmaw)
+{
+    qemu_co_mutex_lock(&vmaw->flush_lock);
+    int ret = vma_writer_flush(vmaw);
+    qemu_co_mutex_unlock(&vmaw->flush_lock);
+    if (ret < 0) {
+        vma_writer_set_error(vmaw, "vma_writer_flush_header failed");
+    }
+    return ret;
+}
+
 /**
  * all jobs should call this when there is no more data
  * Returns: number of remaining stream (0 ==> finished)
@@ -529,12 +542,7 @@ vma_writer_close_stream(VmaWriter *vmaw, uint8_t dev_id)
 
     if (open_drives <= 0) {
         DPRINTF("vma_writer_set_status all drives completed\n");
-        qemu_co_mutex_lock(&vmaw->flush_lock);
-        int ret = vma_writer_flush(vmaw);
-        qemu_co_mutex_unlock(&vmaw->flush_lock);
-        if (ret < 0) {
-            vma_writer_set_error(vmaw, "vma_writer_close_stream: flush failed");
-        }
+        vma_writer_flush_output(vmaw);
     }
 
     return open_drives;
