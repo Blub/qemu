@@ -3109,6 +3109,7 @@ int main(int argc, char **argv, char **envp)
     int optind;
     const char *optarg;
     const char *loadvm = NULL;
+    const char *loadstate = NULL;
     MachineClass *machine_class;
     const char *cpu_model;
     const char *vga_model = NULL;
@@ -3784,6 +3785,9 @@ int main(int argc, char **argv, char **envp)
                 break;
             case QEMU_OPTION_loadvm:
                 loadvm = optarg;
+                break;
+            case QEMU_OPTION_loadstate:
+                loadstate = optarg;
                 break;
             case QEMU_OPTION_full_screen:
                 full_screen = 1;
@@ -4888,6 +4892,12 @@ int main(int argc, char **argv, char **envp)
     } else if (loadvm) {
         Error *local_err = NULL;
         if (load_snapshot(loadvm, &local_err) < 0) {
+            error_report_err(local_err);
+            autostart = 0;
+        }
+    } else if (loadstate) {
+        Error *local_err = NULL;
+        if (load_snapshot_from_blockdev(loadstate, &local_err) < 0) {
             error_report_err(local_err);
             autostart = 0;
         }

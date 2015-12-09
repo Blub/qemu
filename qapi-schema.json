@@ -2439,6 +2439,38 @@
 { 'command': 'query-target', 'returns': 'TargetInfo' }
 
 ##
+# @savevm-start:
+#
+# Prepare for snapshot and halt VM. Save VM state to statefile.
+#
+##
+{ 'command': 'savevm-start', 'data': { '*statefile': 'str' } }
+
+##
+# @snapshot-drive:
+#
+# Create an internal drive snapshot.
+#
+##
+{ 'command': 'snapshot-drive', 'data': { 'device': 'str', 'name': 'str' } }
+
+##
+# @delete-drive-snapshot:
+#
+# Delete a drive snapshot.
+#
+##
+{ 'command': 'delete-drive-snapshot', 'data': { 'device': 'str', 'name': 'str' } }
+
+##
+# @savevm-end:
+#
+# Resume VM after a snapshot.
+#
+##
+{ 'command': 'savevm-end' }
+
+##
 # @AcpiTableOptions:
 #
 # Specify an ACPI table on the command line to load.

@@ -3698,6 +3698,19 @@ STEXI
 Start right away with a saved state (@code{loadvm} in monitor)
 ETEXI
 
+DEF("loadstate", HAS_ARG, QEMU_OPTION_loadstate, \
+    "-loadstate file\n" \
+    "                start right away with a saved state\n",
+    QEMU_ARCH_ALL)
+STEXI
+@item -loadstate @var{file}
+@findex -loadstate
+Start right away with a saved state. This option does not rollback
+disk state like @code{loadvm}, so user must make sure that disk
+have correct state. @var{file} can be any valid device URL. See the section
+for "Device URL Syntax" for more information.
+ETEXI
+
 #ifndef _WIN32
 DEF("daemonize", 0, QEMU_OPTION_daemonize, \
     "-daemonize      daemonize QEMU after initializing\n", QEMU_ARCH_ALL)
