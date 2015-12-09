@@ -2790,6 +2790,8 @@
 #
 # @default: #optional whether the machine is default
 #
+# @current: #optional whether this machine is currently used
+#
 # @cpu-max: maximum number of CPUs supported by the machine type
 #           (since 1.5.0)
 #
@@ -2797,7 +2799,7 @@
 ##
 { 'struct': 'MachineInfo',
   'data': { 'name': 'str', '*alias': 'str',
-            '*is-default': 'bool', 'cpu-max': 'int' } }
+            '*is-default': 'bool', '*is-current': 'bool', 'cpu-max': 'int' } }
 
 ##
 # @query-machines:

@@ -1523,6 +1523,11 @@ MachineInfoList *qmp_query_machines(Error **errp)
         info->name = g_strdup(mc->name);
         info->cpu_max = !mc->max_cpus ? 1 : mc->max_cpus;
 
+        if (strcmp(mc->name, MACHINE_GET_CLASS(current_machine)->name) == 0) {
+            info->has_is_current = true;
+            info->is_current = true;
+        }
+
         entry = g_malloc0(sizeof(*entry));
         entry->value = info;
         entry->next = mach_list;
