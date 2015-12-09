@@ -2596,7 +2596,8 @@ static int img_info(int argc, char **argv)
 
     list = collect_image_info_list(image_opts, filename, fmt, chain);
     if (!list) {
-        return 1;
+ 	// return success if snapshot does not exists
+        return 0;
     }
 
     switch (output_format) {
