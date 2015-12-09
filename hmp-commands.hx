@@ -89,9 +89,11 @@ ETEXI
 
    {
         .name       = "backup",
-        .args_type  = "backupfile:s,speed:o?,devlist:s?",
-        .params     = "backupfile [speed [devlist]]",
-        .help       = "create a VM Backup.",
+        .args_type  = "directory:-d,backupfile:s,speed:o?,devlist:s?",
+        .params     = "[-d] backupfile [speed [devlist]]",
+        .help       = "create a VM Backup."
+		    "\n\t\t\t Use -d to dump data into a directory instead"
+		    "\n\t\t\t of using VMA format.",
         .mhandler.cmd = hmp_backup,
     },
 

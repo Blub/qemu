@@ -1512,11 +1512,13 @@ void hmp_backup(Monitor *mon, const QDict *qdict)
 {
     Error *error = NULL;
 
+    int dir = qdict_get_try_bool(qdict, "directory", 0);
     const char *backup_file = qdict_get_str(qdict, "backupfile");
     const char *devlist = qdict_get_try_str(qdict, "devlist");
     int64_t speed = qdict_get_try_int(qdict, "speed", 0);
 
-    qmp_backup(backup_file, true, BACKUP_FORMAT_VMA, false, NULL, !!devlist,
+    qmp_backup(backup_file, true, dir ? BACKUP_FORMAT_DIR : BACKUP_FORMAT_VMA,
+               false, NULL, !!devlist,
                devlist, qdict_haskey(qdict, "speed"), speed, &error);
 
     hmp_handle_error(mon, &error);
