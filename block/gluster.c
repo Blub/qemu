@@ -26,6 +26,7 @@ typedef struct BDRVGlusterState {
 
 typedef struct GlusterConf {
     char *server;
+    char *backupserver;
     int port;
     char *volname;
     char *image;
@@ -36,6 +37,7 @@ static void qemu_gluster_gconf_free(GlusterConf *gconf)
 {
     if (gconf) {
         g_free(gconf->server);
+        g_free(gconf->backupserver);
         g_free(gconf->volname);
         g_free(gconf->image);
         g_free(gconf->transport);
@@ -69,7 +71,7 @@ static int parse_volume_options(GlusterConf *gconf, char *path)
 }
 
 /*
- * file=gluster[+transport]://[server[:port]]/volname/image[?socket=...]
+ * file=gluster[+transport]://[server[:port]]/volname/image[?socket=...|?s2=...]
  *
  * 'gluster' is the protocol.
  *
@@ -85,6 +87,8 @@ static int parse_volume_options(GlusterConf *gconf, char *path)
  * The 'socket' field needs to be populated with the path to unix domain
  * socket.
  *
+ * 's2' can be used to specifies a second volfile server.
+ *
  * 'port' is the port number on which glusterd is listening. This is optional
  * and if not specified, QEMU will send 0 which will make gluster to use the
  * default port. If the transport type is unix, then 'port' should not be
@@ -97,6 +101,7 @@ static int parse_volume_options(GlusterConf *gconf, char *path)
  * Examples:
  *
  * file=gluster://1.2.3.4/testvol/a.img
+ * file=gluster://1.2.3.4/testvol/a.img?s2=1.2.3.5
  * file=gluster+tcp://1.2.3.4/testvol/a.img
  * file=gluster+tcp://1.2.3.4:24007/testvol/dir/a.img
  * file=gluster+tcp://[1:2:3:4:5:6:7:8]/testvol/dir/a.img
@@ -111,6 +116,8 @@ static int qemu_gluster_parseuri(GlusterConf *gconf, const char *filename)
     QueryParams *qp = NULL;
     bool is_unix = false;
     int ret = 0;
+    int i;
+    char *socket = NULL;
 
     uri = uri_parse(filename);
     if (!uri) {
@@ -138,21 +145,28 @@ static int qemu_gluster_parseuri(GlusterConf *gconf, const char *filename)
     }
 
     qp = query_params_parse(uri->query);
-    if (qp->n > 1 || (is_unix && !qp->n) || (!is_unix && qp->n)) {
+    for (i = 0; i < qp->n; i++) {
+        if (!is_unix && strcmp(qp->p[i].name, "s2") == 0) {
+            gconf->backupserver = g_strdup(qp->p[i].value);
+        } else if (is_unix && strcmp(qp->p[i].name, "socket") == 0) {
+            socket = qp->p[i].value;
+        } else {
+            ret = -EINVAL;
+            goto out;
+        }
+    }
+
+    if (is_unix && !socket) {
         ret = -EINVAL;
         goto out;
     }
 
     if (is_unix) {
-        if (uri->server || uri->port) {
+        if (!socket || uri->server || uri->port) {
             ret = -EINVAL;
             goto out;
         }
-        if (strcmp(qp->p[0].name, "socket")) {
-            ret = -EINVAL;
-            goto out;
-        }
-        gconf->server = g_strdup(qp->p[0].value);
+        gconf->server = g_strdup(socket);
     } else {
         gconf->server = g_strdup(uri->server ? uri->server : "localhost");
         gconf->port = uri->port;
@@ -176,7 +190,7 @@ static struct glfs *qemu_gluster_init(GlusterConf *gconf, const char *filename,
     ret = qemu_gluster_parseuri(gconf, filename);
     if (ret < 0) {
         error_setg(errp, "Usage: file=gluster[+transport]://[server[:port]]/"
-                   "volname/image[?socket=...]");
+                   "volname/image[?socket=...|?s2=...]");
         errno = -ret;
         goto out;
     }
@@ -190,6 +204,14 @@ static struct glfs *qemu_gluster_init(GlusterConf *gconf, const char *filename,
             gconf->port);
     if (ret < 0) {
         goto out;
+    }
+
+    if (gconf->backupserver) {
+        ret = glfs_set_volfile_server(glfs, gconf->transport, gconf->backupserver,
+                                      gconf->port);
+        if (ret < 0) {
+            goto out;
+        }
     }
 
     /*
