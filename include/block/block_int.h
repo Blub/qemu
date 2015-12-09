@@ -59,7 +59,7 @@
 
 #define BLOCK_PROBE_BUF_SIZE        512
 
-typedef int BackupDumpFunc(void *opaque, BlockDriverState *bs,
+typedef int BackupDumpFunc(void *opaque, BlockBackend *be,
                            int64_t sector_num, int n_sectors, unsigned char *buf);
 
 enum BdrvTrackedRequestType {
