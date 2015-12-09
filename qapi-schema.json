@@ -742,6 +742,40 @@
            '*error-desc': 'str'} }
 
 ##
+# @SaveVMInfo:
+#
+# Information about current migration process.
+#
+# @status: string describing the current savevm status.
+#          This can be 'active', 'completed', 'failed'.
+#          If this field is not returned, no savevm process
+#          has been initiated
+#
+# @error: string containing error message is status is failed.
+#
+# @total-time: total amount of milliseconds since savevm started.
+#        If savevm has ended, it returns the total save time
+#
+# @bytes: total amount of data transfered
+#
+# Since: 1.3
+##
+{ 'struct': 'SaveVMInfo',
+  'data': {'*status': 'str', '*error': 'str',
+           '*total-time': 'int', '*bytes': 'int'} }
+
+##
+# @query-savevm:
+#
+# Returns information about current savevm process.
+#
+# Returns: @SaveVMInfo
+#
+# Since: 1.3
+##
+{ 'command': 'query-savevm', 'returns': 'SaveVMInfo' }
+
+##
 # @query-migrate:
 #
 # Returns information about current migration process. If migration
@@ -4848,7 +4882,41 @@
 #
 # Since: 1.2.0
 ##
+
 { 'command': 'query-target', 'returns': 'TargetInfo' }
+
+##
+# @savevm-start:
+#
+# Prepare for snapshot and halt VM. Save VM state to statefile.
+#
+##
+{ 'command': 'savevm-start', 'data': { '*statefile': 'str' } }
+
+##
+# @snapshot-drive:
+#
+# Create an internal drive snapshot.
+#
+##
+{ 'command': 'snapshot-drive', 'data': { 'device': 'str', 'name': 'str' } }
+
+##
+# @delete-drive-snapshot:
+#
+# Delete a drive snapshot.
+#
+##
+{ 'command': 'delete-drive-snapshot', 'data': { 'device': 'str', 'name': 'str' } }
+
+##
+# @savevm-end:
+#
+# Resume VM after a snapshot.
+#
+##
+{ 'command': 'savevm-end' }
+
 
 ##
 # @QKeyCode:

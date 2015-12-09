@@ -955,10 +955,10 @@ void qemu_savevm_state_header(QEMUFile *f)
     }
 }
 
-void qemu_savevm_state_setup(QEMUFile *f)
+int qemu_savevm_state_setup(QEMUFile *f)
 {
     SaveStateEntry *se;
-    int ret;
+    int ret = 0;
 
     trace_savevm_state_setup();
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
@@ -979,6 +979,7 @@ void qemu_savevm_state_setup(QEMUFile *f)
             break;
         }
     }
+    return ret;
 }
 
 /*

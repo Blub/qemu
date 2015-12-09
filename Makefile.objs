@@ -49,6 +49,7 @@ common-obj-$(CONFIG_POSIX) += os-posix.o
 common-obj-$(CONFIG_LINUX) += fsdev/
 
 common-obj-y += migration/
+common-obj-y += savevm-async.o
 
 common-obj-y += audio/
 common-obj-y += hw/

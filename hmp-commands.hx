@@ -1861,3 +1861,35 @@ ETEXI
 STEXI
 @end table
 ETEXI
+
+    {
+        .name       = "savevm-start",
+        .args_type  = "statefile:s?",
+        .params     = "[statefile]",
+        .help       = "Prepare for snapshot and halt VM. Save VM state to statefile.",
+        .cmd = hmp_savevm_start,
+    },
+
+    {
+        .name       = "snapshot-drive",
+        .args_type  = "device:s,name:s",
+        .params     = "device name",
+        .help       = "Create internal snapshot.",
+        .cmd = hmp_snapshot_drive,
+    },
+
+    {
+        .name       = "delete-drive-snapshot",
+        .args_type  = "device:s,name:s",
+        .params     = "device name",
+        .help       = "Delete internal snapshot.",
+        .cmd = hmp_delete_drive_snapshot,
+    },
+
+    {
+        .name       = "savevm-end",
+        .args_type  = "",
+        .params     = "",
+        .help       = "Resume VM after snaphot.",
+        .cmd = hmp_savevm_end,
+    },
