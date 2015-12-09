@@ -3015,6 +3015,11 @@ static void pvebackup_cancel(void *opaque)
         error_setg(&backup_state.error, "backup cancelled");
     }
 
+    if (backup_state.vmaw) {
+        /* make sure vma writer does not block anymore */
+        vma_writer_set_error(backup_state.vmaw, "backup cancelled");
+    }
+
     /* drain all i/o (awake jobs waiting for aio) */
     bdrv_drain_all();
 
@@ -3027,6 +3032,7 @@ static void pvebackup_cancel(void *opaque)
             if (job) {
                 if (!di->completed) {
                      block_job_cancel_sync(job);
+                     bdrv_drain_all(); /* drain all i/o (awake jobs waiting for aio) */
                 }
             }
         }
