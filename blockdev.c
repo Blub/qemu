@@ -3129,9 +3129,6 @@ static void pvebackup_cancel(void *opaque)
         vma_writer_set_error(backup_state.vmaw, "backup cancelled");
     }
 
-    /* drain all i/o (awake jobs waiting for aio) */
-    bdrv_drain_all();
-
     GList *l = backup_state.di_list;
     while (l) {
         PVEBackupDevInfo *di = (PVEBackupDevInfo *)l->data;
@@ -3140,8 +3137,7 @@ static void pvebackup_cancel(void *opaque)
             BlockJob *job = di->bs->job;
             if (job) {
                 if (!di->completed) {
-                     block_job_cancel_sync(job);
-                     bdrv_drain_all(); /* drain all i/o (awake jobs waiting for aio) */
+                    block_job_cancel_sync(job);
                 }
             }
         }
