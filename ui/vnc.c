@@ -1635,6 +1635,10 @@ static void kbd_leds(void *opaque, int ledstate)
 
 static void do_key_event(VncState *vs, int down, int keycode, int sym)
 {
+    int mods =  keycode & 0xf00;
+
+    keycode &= SCANCODE_KEYMASK;
+
     /* QEMU console switch */
     switch(keycode) {
     case 0x2a:                          /* Left Shift */
@@ -1715,8 +1719,27 @@ static void do_key_event(VncState *vs, int down, int keycode, int sym)
     }
 
     if (qemu_console_is_graphic(NULL)) {
+
+ 	/* our java vnc client never sends ALTGR, so we create
+	   an artificial up/down event */
+
+	int emul_altgr = (mods & SCANCODE_ALTGR) &&
+	    !vs->modifiers_state[0xb8];
+
+	if (emul_altgr) {
+            reset_keys(vs);
+            qemu_input_event_send_key_number(vs->vd->dcl.con, 0xb8, true);
+            qemu_input_event_send_key_delay(vs->vd->key_delay_ms);
+	}
+
         qemu_input_event_send_key_number(vs->vd->dcl.con, keycode, down);
         qemu_input_event_send_key_delay(vs->vd->key_delay_ms);
+
+	if (emul_altgr) {
+             qemu_input_event_send_key_number(vs->vd->dcl.con, 0xb8, false);
+             qemu_input_event_send_key_delay(vs->vd->key_delay_ms);
+	}
+
     } else {
         bool numlock = vs->modifiers_state[0x45];
         bool control = (vs->modifiers_state[0x1d] ||
@@ -1856,7 +1879,8 @@ static void key_event(VncState *vs, int down, uint32_t sym)
         lsym = lsym - 'A' + 'a';
     }
 
-    keycode = keysym2scancode(vs->vd->kbd_layout, lsym & 0xFFFF) & SCANCODE_KEYMASK;
+    keycode = keysym2scancode(vs->vd->kbd_layout, lsym & 0xFFFF);
+
     trace_vnc_key_event_map(down, sym, keycode, code2name(keycode));
     do_key_event(vs, down, keycode, sym);
 }
