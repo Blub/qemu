@@ -985,6 +985,7 @@ BlockJob *backup_job_create(const char *job_id, BlockDriverState *bs,
                             BlockdevOnError on_target_error,
                             int creation_flags,
                             BlockCompletionFunc *cb, void *opaque,
+                            int pause_count,
                             BlockJobTxn *txn, Error **errp);
 
 void hmp_drive_add_node(Monitor *mon, const char *optstr);
