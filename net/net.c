@@ -1399,6 +1399,33 @@ void hmp_info_network(Monitor *mon, const QDict *qdict)
     }
 }
 
+int64_t qmp_get_link_status(const char *name, Error **errp)
+{
+    NetClientState *ncs[MAX_QUEUE_NUM];
+    NetClientState *nc;
+    int queues;
+    bool ret;
+
+    queues = qemu_find_net_clients_except(name, ncs,
+                                          NET_CLIENT_DRIVER__MAX,
+                                          MAX_QUEUE_NUM);
+
+    if (queues == 0) {
+        error_set(errp, ERROR_CLASS_DEVICE_NOT_FOUND,
+                  "Device '%s' not found", name);
+        return (int64_t) -1;
+    }
+
+    nc = ncs[0];
+    ret = ncs[0]->link_down;
+
+    if (nc->peer->info->type == NET_CLIENT_DRIVER_NIC) {
+      ret = ncs[0]->peer->link_down;
+    }
+
+    return (int64_t) ret ? 0 : 1;
+}
+
 void qmp_set_link(const char *name, bool up, Error **errp)
 {
     NetClientState *ncs[MAX_QUEUE_NUM];
