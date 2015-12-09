@@ -4904,6 +4904,36 @@ Example:
 EQMP
 
     {
+        .name       = "savevm-start",
+        .args_type  = "statefile:s?",
+        .mhandler.cmd_new = qmp_marshal_savevm_start,
+    },
+
+    {
+        .name       = "snapshot-drive",
+        .args_type  = "device:s,name:s",
+        .mhandler.cmd_new = qmp_marshal_snapshot_drive,
+    },
+
+    {
+        .name       = "delete-drive-snapshot",
+        .args_type  = "device:s,name:s",
+        .mhandler.cmd_new = qmp_marshal_delete_drive_snapshot,
+    },
+
+    {
+        .name       = "savevm-end",
+        .args_type  = "",
+        .mhandler.cmd_new = qmp_marshal_savevm_end,
+    },
+
+    {
+        .name       = "query-savevm",
+        .args_type  = "",
+        .mhandler.cmd_new = qmp_marshal_query_savevm,
+    },
+
+    {
         .name       = "query-rocker",
         .args_type  = "name:s",
         .mhandler.cmd_new = qmp_marshal_query_rocker,

@@ -879,11 +879,11 @@ void qemu_savevm_state_header(QEMUFile *f)
 
 }
 
-void qemu_savevm_state_begin(QEMUFile *f,
+int qemu_savevm_state_begin(QEMUFile *f,
                              const MigrationParams *params)
 {
     SaveStateEntry *se;
-    int ret;
+    int ret = 0;
 
     trace_savevm_state_begin();
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
@@ -911,6 +911,7 @@ void qemu_savevm_state_begin(QEMUFile *f,
             break;
         }
     }
+    return ret;
 }
 
 /*
@@ -1014,7 +1015,7 @@ void qemu_savevm_state_complete_postcopy(QEMUFile *f)
     qemu_fflush(f);
 }
 
-void qemu_savevm_state_complete_precopy(QEMUFile *f, bool iterable_only)
+int qemu_savevm_state_complete_precopy(QEMUFile *f, bool iterable_only)
 {
     QJSON *vmdesc;
     int vmdesc_len;
@@ -1048,12 +1049,12 @@ void qemu_savevm_state_complete_precopy(QEMUFile *f, bool iterable_only)
         save_section_footer(f, se);
         if (ret < 0) {
             qemu_file_set_error(f, ret);
-            return;
+            return ret;
         }
     }
 
     if (iterable_only) {
-        return;
+        return ret;
     }
 
     vmdesc = qjson_new();
@@ -1100,6 +1101,7 @@ void qemu_savevm_state_complete_precopy(QEMUFile *f, bool iterable_only)
     qjson_destroy(vmdesc);
 
     qemu_fflush(f);
+    return qemu_file_get_error(f);
 }
 
 /* Give an estimate of the amount left to be transferred,
