@@ -1518,7 +1518,7 @@ void hmp_backup(Monitor *mon, const QDict *qdict)
     int64_t speed = qdict_get_try_int(qdict, "speed", 0);
 
     qmp_backup(backup_file, true, dir ? BACKUP_FORMAT_DIR : BACKUP_FORMAT_VMA,
-               false, NULL, !!devlist,
+               false, NULL, false, NULL, !!devlist,
                devlist, qdict_haskey(qdict, "speed"), speed, &error);
 
     hmp_handle_error(mon, &error);
