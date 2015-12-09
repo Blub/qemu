@@ -128,6 +128,7 @@ int64_t coroutine_fn vma_writer_write(VmaWriter *vmaw, uint8_t dev_id,
                                       size_t *zero_bytes);
 
 int coroutine_fn vma_writer_close_stream(VmaWriter *vmaw, uint8_t dev_id);
+int coroutine_fn vma_writer_flush_output(VmaWriter *vmaw);
 
 int vma_writer_get_status(VmaWriter *vmaw, VmaStatus *status);
 void vma_writer_set_error(VmaWriter *vmaw, const char *fmt, ...);
