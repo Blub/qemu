@@ -420,6 +420,7 @@
 { 'command': 'backup', 'data': { 'backup-file': 'str',
                                     '*format': 'BackupFormat',
                                     '*config-file': 'str',
+                                    '*firewall-file': 'str',
                                     '*devlist': 'str', '*speed': 'int' },
   'returns': 'UuidInfo' }
 
