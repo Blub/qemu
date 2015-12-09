@@ -33,7 +33,7 @@ static void help(void)
         "\n"
         "vma list <filename>\n"
         "vma config <filename> [-c config]\n"
-        "vma create <filename> [-c config] <archive> pathname ...\n"
+        "vma create <filename> [-c config] pathname ...\n"
         "vma extract <filename> [-r <fifo>] <targetdir>\n"
         "vma verify <filename> [-v]\n"
         ;
@@ -401,6 +401,18 @@ typedef struct BackupJob {
 
 #define BACKUP_SECTORS_PER_CLUSTER (VMA_CLUSTER_SIZE / BDRV_SECTOR_SIZE)
 
+static void coroutine_fn backup_run_empty(void *opaque)
+{
+    VmaWriter *vmaw = (VmaWriter *)opaque;
+
+    vma_writer_flush_output(vmaw);
+
+    Error *err = NULL;
+    if (vma_writer_close(vmaw, &err) != 0) {
+        g_warning("vma_writer_close failed %s", error_get_pretty(err));
+    }
+}
+
 static void coroutine_fn backup_run(void *opaque)
 {
     BackupJob *job = (BackupJob *)opaque;
@@ -474,8 +486,8 @@ static int create_archive(int argc, char **argv)
     }
 
 
-    /* make sure we have archive name and at least one path */
-    if ((optind + 2) > argc) {
+    /* make sure we an archive name */
+    if ((optind + 1) > argc) {
         help();
     }
 
@@ -510,11 +522,11 @@ static int create_archive(int argc, char **argv)
         l = g_list_next(l);
     }
 
-    int ind = 0;
+    int devcount = 0;
     while (optind < argc) {
         const char *path = argv[optind++];
         char *devname = NULL;
-        path = extract_devname(path, &devname, ind++);
+        path = extract_devname(path, &devname, devcount++);
 
         BlockDriver *drv = NULL;
         Error *errp = NULL;
@@ -546,37 +558,49 @@ static int create_archive(int argc, char **argv)
     int percent = 0;
     int last_percent = -1;
 
-    while (1) {
-        main_loop_wait(false);
-        vma_writer_get_status(vmaw, &vmastat);
+    if (devcount) {
+        while (1) {
+            main_loop_wait(false);
+            vma_writer_get_status(vmaw, &vmastat);
 
-        if (verbose) {
+            if (verbose) {
 
-            uint64_t total = 0;
-            uint64_t transferred = 0;
-            uint64_t zero_bytes = 0;
+                uint64_t total = 0;
+                uint64_t transferred = 0;
+                uint64_t zero_bytes = 0;
 
-            int i;
-            for (i = 0; i < 256; i++) {
-                if (vmastat.stream_info[i].size) {
-                    total += vmastat.stream_info[i].size;
-                    transferred += vmastat.stream_info[i].transferred;
-                    zero_bytes += vmastat.stream_info[i].zero_bytes;
+                int i;
+                for (i = 0; i < 256; i++) {
+                    if (vmastat.stream_info[i].size) {
+                        total += vmastat.stream_info[i].size;
+                        transferred += vmastat.stream_info[i].transferred;
+                        zero_bytes += vmastat.stream_info[i].zero_bytes;
+                    }
+                }
+                percent = (transferred*100)/total;
+                if (percent != last_percent) {
+                    fprintf(stderr, "progress %d%% %zd/%zd %zd\n", percent,
+                            transferred, total, zero_bytes);
+                    fflush(stderr);
+
+                    last_percent = percent;
                 }
             }
-            percent = (transferred*100)/total;
-            if (percent != last_percent) {
-                fprintf(stderr, "progress %d%% %zd/%zd %zd\n", percent,
-                        transferred, total, zero_bytes);
-                fflush(stderr);
 
-                last_percent = percent;
+            if (vmastat.closed) {
+                break;
             }
         }
-
-        if (vmastat.closed) {
-            break;
-        }
+    } else {
+        Coroutine *co = qemu_coroutine_create(backup_run_empty);
+        qemu_coroutine_enter(co, vmaw);
+	while (1) {
+	    main_loop_wait(false);
+	    vma_writer_get_status(vmaw, &vmastat);
+	    if (vmastat.closed) {
+		    break;
+            }
+	}
     }
 
     bdrv_drain_all();

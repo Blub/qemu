@@ -334,11 +334,6 @@ static int vma_reader_read_head(VmaReader *vmar, Error **errp)
         }
     }
 
-    if (!count) {
-        error_setg(errp, "vma does not contain data");
-        return -1;
-    }
-
     for (i = 0; i < VMA_MAX_CONFIGS; i++) {
         uint32_t name_ptr = GUINT32_FROM_BE(h->config_names[i]);
         uint32_t data_ptr = GUINT32_FROM_BE(h->config_data[i]);
@@ -830,16 +825,20 @@ static int vma_reader_restore_full(VmaReader *vmar, int vmstate_fd,
     }
 
     if (verbose) {
-        printf("total bytes read %zd, sparse bytes %zd (%.3g%%)\n",
-               vmar->clusters_read*VMA_CLUSTER_SIZE,
-               vmar->zero_cluster_data,
-               (double)(100.0*vmar->zero_cluster_data)/
-               (vmar->clusters_read*VMA_CLUSTER_SIZE));
+        if (vmar->clusters_read) {
+            printf("total bytes read %zd, sparse bytes %zd (%.3g%%)\n",
+                   vmar->clusters_read*VMA_CLUSTER_SIZE,
+                   vmar->zero_cluster_data,
+                   (double)(100.0*vmar->zero_cluster_data)/
+                   (vmar->clusters_read*VMA_CLUSTER_SIZE));
 
-        int64_t datasize = vmar->clusters_read*VMA_CLUSTER_SIZE-vmar->zero_cluster_data;
-        if (datasize) { // this does not make sense for empty files
-            printf("space reduction due to 4K zero blocks %.3g%%\n",
-                   (double)(100.0*vmar->partial_zero_cluster_data) / datasize);
+            int64_t datasize = vmar->clusters_read*VMA_CLUSTER_SIZE-vmar->zero_cluster_data;
+            if (datasize) { // this does not make sense for empty files
+                printf("space reduction due to 4K zero blocks %.3g%%\n",
+                       (double)(100.0*vmar->partial_zero_cluster_data) / datasize);
+            }
+        } else {
+            printf("vma archive contains no image data\n");
         }
     }
     return ret;
