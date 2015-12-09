@@ -35,6 +35,21 @@
 { 'command': 'set_link', 'data': {'name': 'str', 'up': 'bool'} }
 
 ##
+# @get_link_status:
+#
+# Get the current link state of the nics or nic.
+#
+# @name: name of the nic you get the state of
+#
+# Return: If link is up 1
+#         If link is down 0
+#         If an error occure an empty string.
+#
+# Notes: this is an Proxmox VE extension and not offical part of Qemu.
+##
+{ 'command': 'get_link_status', 'data': {'name': 'str'}, 'returns': 'int'}
+
+##
 # @netdev_add:
 #
 # Add a network backend.
