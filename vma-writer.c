@@ -798,6 +798,13 @@ vma_writer_write(VmaWriter *vmaw, uint8_t dev_id, int64_t cluster_num,
     return transferred;
 }
 
+void vma_writer_error_propagate(VmaWriter *vmaw, Error **errp)
+{
+    if (vmaw->status < 0 && *errp == NULL) {
+        error_setg(errp, "%s", vmaw->errmsg);
+    }
+}
+
 int vma_writer_close(VmaWriter *vmaw, Error **errp)
 {
     g_assert(vmaw != NULL);
