@@ -3081,6 +3081,13 @@ static void pvebackup_cleanup(void)
     }
 }
 
+static void coroutine_fn backup_close_vma_stream(void *opaque)
+{
+    PVEBackupDevInfo *di = opaque;
+
+    vma_writer_close_stream(backup_state.vmaw, di->dev_id);
+}
+
 static void pvebackup_complete_cb(void *opaque, int ret)
 {
     PVEBackupDevInfo *di = opaque;
@@ -3098,7 +3105,8 @@ static void pvebackup_complete_cb(void *opaque, int ret)
     di->target = NULL;
 
     if (backup_state.vmaw) {
-        vma_writer_close_stream(backup_state.vmaw, di->dev_id);
+        Coroutine *co = qemu_coroutine_create(backup_close_vma_stream, di);
+        qemu_coroutine_enter(co);
     }
 
     block_job_cb(bs, ret);
