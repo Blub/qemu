@@ -2207,6 +2207,63 @@ void hmp_info_memory_devices(Monitor *mon, const QDict *qdict)
     qapi_free_MemoryDeviceInfoList(info_list);
 }
 
+void hmp_savevm_start(Monitor *mon, const QDict *qdict)
+{
+    Error *errp = NULL;
+    const char *statefile = qdict_get_try_str(qdict, "statefile");
+
+    qmp_savevm_start(statefile != NULL, statefile, &errp);
+    hmp_handle_error(mon, &errp);
+}
+
+void hmp_snapshot_drive(Monitor *mon, const QDict *qdict)
+{
+    Error *errp = NULL;
+    const char *name = qdict_get_str(qdict, "name");
+    const char *device = qdict_get_str(qdict, "device");
+
+    qmp_snapshot_drive(device, name, &errp);
+    hmp_handle_error(mon, &errp);
+}
+
+void hmp_delete_drive_snapshot(Monitor *mon, const QDict *qdict)
+{
+    Error *errp = NULL;
+    const char *name = qdict_get_str(qdict, "name");
+    const char *device = qdict_get_str(qdict, "device");
+
+    qmp_delete_drive_snapshot(device, name, &errp);
+    hmp_handle_error(mon, &errp);
+}
+
+void hmp_savevm_end(Monitor *mon, const QDict *qdict)
+{
+    Error *errp = NULL;
+
+    qmp_savevm_end(&errp);
+    hmp_handle_error(mon, &errp);
+}
+
+void hmp_info_savevm(Monitor *mon, const QDict *qdict)
+{
+    SaveVMInfo *info;
+    info = qmp_query_savevm(NULL);
+
+    if (info->has_status) {
+        monitor_printf(mon, "savevm status: %s\n", info->status);
+        monitor_printf(mon, "total time: %" PRIu64 " milliseconds\n",
+                       info->total_time);
+    } else {
+        monitor_printf(mon, "savevm status: not running\n");
+    }
+    if (info->has_bytes) {
+        monitor_printf(mon, "Bytes saved: %"PRIu64"\n", info->bytes);
+    }
+    if (info->has_error) {
+        monitor_printf(mon, "Error: %s\n", info->error);
+    }
+}
+
 void hmp_info_iothreads(Monitor *mon, const QDict *qdict)
 {
     IOThreadInfoList *info_list = qmp_query_iothreads(NULL);

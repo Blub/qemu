@@ -50,6 +50,7 @@ common-obj-$(CONFIG_LINUX) += fsdev/
 
 common-obj-y += migration/
 common-obj-y += page_cache.o #aio.o
+common-obj-y += savevm-async.o
 
 common-obj-$(CONFIG_SPICE) += spice-qemu-char.o
 

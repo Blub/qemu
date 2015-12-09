@@ -3091,7 +3091,7 @@ out:
     bdrv_unref(bs_new);
 }
 
-static void bdrv_delete(BlockDriverState *bs)
+void bdrv_delete(BlockDriverState *bs)
 {
     assert(!bs->job);
     assert(bdrv_op_blocker_is_empty(bs));

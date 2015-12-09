@@ -78,6 +78,7 @@ void qemu_remove_machine_init_done_notifier(Notifier *notify);
 void hmp_savevm(Monitor *mon, const QDict *qdict);
 int save_vmstate(Monitor *mon, const char *name);
 int load_vmstate(const char *name);
+int load_state_from_blockdev(const char *filename);
 void hmp_delvm(Monitor *mon, const QDict *qdict);
 void hmp_info_snapshots(Monitor *mon, const QDict *qdict);
 
@@ -105,13 +106,13 @@ enum qemu_vm_cmd {
 #define MAX_VM_CMD_PACKAGED_SIZE (1ul << 24)
 
 bool qemu_savevm_state_blocked(Error **errp);
-void qemu_savevm_state_begin(QEMUFile *f,
+int qemu_savevm_state_begin(QEMUFile *f,
                              const MigrationParams *params);
 void qemu_savevm_state_header(QEMUFile *f);
 int qemu_savevm_state_iterate(QEMUFile *f, bool postcopy);
 void qemu_savevm_state_cleanup(void);
 void qemu_savevm_state_complete_postcopy(QEMUFile *f);
-void qemu_savevm_state_complete_precopy(QEMUFile *f, bool iterable_only);
+int qemu_savevm_state_complete_precopy(QEMUFile *f, bool iterable_only);
 void qemu_savevm_state_pending(QEMUFile *f, uint64_t max_size,
                                uint64_t *res_non_postcopiable,
                                uint64_t *res_postcopiable);
