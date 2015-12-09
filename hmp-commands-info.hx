@@ -588,6 +588,19 @@ Show current migration xbzrle cache size.
 ETEXI
 
     {
+        .name       = "savevm",
+        .args_type  = "",
+        .params     = "",
+        .help       = "show savevm status",
+        .mhandler.cmd = hmp_info_savevm,
+    },
+
+STEXI
+@item info savevm
+show savevm status
+ETEXI
+
+    {
         .name       = "balloon",
         .args_type  = "",
         .params     = "",
