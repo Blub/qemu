@@ -43,6 +43,7 @@ typedef struct BackupBlockJob {
     BdrvDirtyBitmap *sync_bitmap;
     MirrorSyncMode sync_mode;
     RateLimit limit;
+    BackupDumpFunc *dump_cb;
     BlockdevOnError on_source_error;
     BlockdevOnError on_target_error;
     CoRwlock flush_rwlock;
@@ -147,14 +148,21 @@ static int coroutine_fn backup_do_cow(BlockDriverState *bs,
             goto out;
         }
 
+        int64_t start_sec = start * BACKUP_SECTORS_PER_CLUSTER;
         if (buffer_is_zero(iov.iov_base, iov.iov_len)) {
-            ret = bdrv_co_write_zeroes(job->target,
-                                       start * BACKUP_SECTORS_PER_CLUSTER,
-                                       n, BDRV_REQ_MAY_UNMAP);
+            if (job->dump_cb) {
+                ret = job->dump_cb(job->common.opaque, job->target, start_sec, n, NULL);
+            }
+            if (job->target) {
+                ret = bdrv_co_write_zeroes(job->target, start_sec, n, BDRV_REQ_MAY_UNMAP);
+            }
         } else {
-            ret = bdrv_co_writev(job->target,
-                                 start * BACKUP_SECTORS_PER_CLUSTER, n,
-                                 &bounce_qiov);
+            if (job->dump_cb) {
+                ret = job->dump_cb(job->common.opaque, job->target, start_sec, n, bounce_buffer);
+            }
+            if (job->target) {
+                ret = bdrv_co_writev(job->target, start_sec, n, &bounce_qiov);
+            }
         }
         if (ret < 0) {
             trace_backup_do_cow_write_fail(job, start, ret);
@@ -216,7 +224,7 @@ static void backup_iostatus_reset(BlockJob *job)
 {
     BackupBlockJob *s = container_of(job, BackupBlockJob, common);
 
-    if (s->target->blk) {
+    if (s->target && s->target->blk) {
         blk_iostatus_reset(s->target->blk);
     }
 }
@@ -268,9 +276,11 @@ static BlockErrorAction backup_error_action(BackupBlockJob *job,
     if (read) {
         return block_job_error_action(&job->common, job->common.bs,
                                       job->on_source_error, true, error);
-    } else {
+    } else if (job->target) {
         return block_job_error_action(&job->common, job->target,
                                       job->on_target_error, false, error);
+    } else {
+        return BLOCK_ERROR_ACTION_REPORT;
     }
 }
 
@@ -396,10 +406,12 @@ static void coroutine_fn backup_run(void *opaque)
 
     job->bitmap = hbitmap_alloc(end, 0);
 
-    bdrv_set_enable_write_cache(target, true);
-    if (target->blk) {
-        blk_set_on_error(target->blk, on_target_error, on_target_error);
-        blk_iostatus_enable(target->blk);
+    if (target) {
+        bdrv_set_enable_write_cache(target, true);
+        if (target->blk) {
+            blk_set_on_error(target->blk, on_target_error, on_target_error);
+            blk_iostatus_enable(target->blk);
+        }
     }
 
     bdrv_add_before_write_notifier(bs, &before_write);
@@ -477,10 +489,12 @@ static void coroutine_fn backup_run(void *opaque)
     qemu_co_rwlock_unlock(&job->flush_rwlock);
     hbitmap_free(job->bitmap);
 
-    if (target->blk) {
-        blk_iostatus_disable(target->blk);
+    if (target) {
+        if (target->blk) {
+            blk_iostatus_disable(target->blk);
+        }
+        bdrv_op_unblock_all(target, job->common.blocker);
     }
-    bdrv_op_unblock_all(target, job->common.blocker);
 
     data = g_malloc(sizeof(*data));
     data->ret = ret;
@@ -492,13 +506,15 @@ void backup_start(BlockDriverState *bs, BlockDriverState *target,
                   BdrvDirtyBitmap *sync_bitmap,
                   BlockdevOnError on_source_error,
                   BlockdevOnError on_target_error,
+                  BackupDumpFunc *dump_cb,
                   BlockCompletionFunc *cb, void *opaque,
+                  int pause_count,
                   BlockJobTxn *txn, Error **errp)
 {
     int64_t len;
 
     assert(bs);
-    assert(target);
+    assert(target || dump_cb);
     assert(cb);
 
     if (bs == target) {
@@ -519,7 +535,7 @@ void backup_start(BlockDriverState *bs, BlockDriverState *target,
         return;
     }
 
-    if (!bdrv_is_inserted(target)) {
+    if (target && !bdrv_is_inserted(target)) {
         error_setg(errp, "Device is not inserted: %s",
                    bdrv_get_device_name(target));
         return;
@@ -529,7 +545,7 @@ void backup_start(BlockDriverState *bs, BlockDriverState *target,
         return;
     }
 
-    if (bdrv_op_is_blocked(target, BLOCK_OP_TYPE_BACKUP_TARGET, errp)) {
+    if (target && bdrv_op_is_blocked(target, BLOCK_OP_TYPE_BACKUP_TARGET, errp)) {
         return;
     }
 
@@ -565,14 +581,17 @@ void backup_start(BlockDriverState *bs, BlockDriverState *target,
         goto error;
     }
 
-    bdrv_op_block_all(target, job->common.blocker);
+    if (target)
+        bdrv_op_block_all(target, job->common.blocker);
 
+    job->dump_cb = dump_cb;
     job->on_source_error = on_source_error;
     job->on_target_error = on_target_error;
     job->target = target;
     job->sync_mode = sync_mode;
     job->sync_bitmap = sync_mode == MIRROR_SYNC_MODE_INCREMENTAL ?
                        sync_bitmap : NULL;
+    job->common.pause_count = pause_count;
     job->common.len = len;
     job->common.co = qemu_coroutine_create(backup_run);
     block_job_txn_add_job(txn, &job->common);
