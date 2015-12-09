@@ -502,6 +502,19 @@ STEXI
 Show CPU statistics.
 ETEXI
 
+    {
+        .name       = "backup",
+        .args_type  = "",
+        .params     = "",
+        .help       = "show backup status",
+        .mhandler.cmd = hmp_info_backup,
+    },
+
+STEXI
+@item info backup
+show backup status
+ETEXI
+
 #if defined(CONFIG_SLIRP)
     {
         .name       = "usernet",

@@ -1254,6 +1254,24 @@ Example:
 EQMP
 
     {
+        .name       = "backup",
+        .args_type  = "backup-file:s,format:s?,config-file:F?,speed:o?,devlist:s?",
+        .mhandler.cmd_new = qmp_marshal_input_backup,
+    },
+
+    {
+        .name       = "backup-cancel",
+        .args_type  = "",
+        .mhandler.cmd_new = qmp_marshal_input_backup_cancel,
+    },
+
+    {
+        .name       = "query-backup",
+        .args_type  = "",
+        .mhandler.cmd_new = qmp_marshal_input_query_backup,
+    },
+
+    {
         .name       = "block-job-set-speed",
         .args_type  = "device:B,speed:o",
         .mhandler.cmd_new = qmp_marshal_block_job_set_speed,

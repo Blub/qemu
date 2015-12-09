@@ -49,6 +49,7 @@
 #include "qmp-commands.h"
 #include "trace.h"
 #include "sysemu/arch_init.h"
+#include "vma.h"
 
 static const char *const if_name[IF_COUNT] = {
     [IF_NONE] = "none",
@@ -2873,6 +2874,443 @@ static void block_job_cb(void *opaque, int ret)
     } else {
         block_job_event_completed(bs->job, msg);
     }
+}
+
+/* PVE backup related function */
+
+static struct PVEBackupState {
+    Error *error;
+    bool cancel;
+    uuid_t uuid;
+    char uuid_str[37];
+    int64_t speed;
+    time_t start_time;
+    time_t end_time;
+    char *backup_file;
+    VmaWriter *vmaw;
+    GList *di_list;
+    size_t total;
+    size_t transferred;
+    size_t zero_bytes;
+} backup_state;
+
+typedef struct PVEBackupDevInfo {
+    BlockDriverState *bs;
+    size_t size;
+    uint8_t dev_id;
+    //bool started;
+    bool completed;
+} PVEBackupDevInfo;
+
+static void pvebackup_run_next_job(void);
+
+static int pvebackup_dump_cb(void *opaque, BlockDriverState *target,
+                             int64_t sector_num, int n_sectors,
+                             unsigned char *buf)
+{
+    PVEBackupDevInfo *di = opaque;
+
+    if (sector_num & 0x7f) {
+        if (!backup_state.error) {
+            error_setg(&backup_state.error,
+                       "got unaligned write inside backup dump "
+                       "callback (sector %ld)", sector_num);
+        }
+        return -1; // not aligned to cluster size
+    }
+
+    int64_t cluster_num = sector_num >> 7;
+    int size = n_sectors * BDRV_SECTOR_SIZE;
+
+    int ret = -1;
+
+    if (backup_state.vmaw) {
+        size_t zero_bytes = 0;
+        ret = vma_writer_write(backup_state.vmaw, di->dev_id, cluster_num,
+                               buf, &zero_bytes);
+        backup_state.zero_bytes += zero_bytes;
+    } else {
+        ret = size;
+        if (!buf) {
+            backup_state.zero_bytes += size;
+        }
+    }
+
+    backup_state.transferred += size;
+
+    return ret;
+}
+
+static void pvebackup_cleanup(void)
+{
+    backup_state.end_time = time(NULL);
+
+    if (backup_state.vmaw) {
+        Error *local_err = NULL;
+        vma_writer_close(backup_state.vmaw, &local_err);
+        error_propagate(&backup_state.error, local_err);
+        backup_state.vmaw = NULL;
+    }
+
+    if (backup_state.di_list) {
+        GList *l = backup_state.di_list;
+        while (l) {
+            PVEBackupDevInfo *di = (PVEBackupDevInfo *)l->data;
+            l = g_list_next(l);
+            g_free(di);
+        }
+        g_list_free(backup_state.di_list);
+        backup_state.di_list = NULL;
+    }
+}
+
+static void pvebackup_complete_cb(void *opaque, int ret)
+{
+    PVEBackupDevInfo *di = opaque;
+
+    assert(backup_state.vmaw);
+
+    di->completed = true;
+
+    if (ret < 0 && !backup_state.error) {
+        error_setg(&backup_state.error, "job failed with err %d - %s",
+                   ret, strerror(-ret));
+    }
+
+    BlockDriverState *bs = di->bs;
+
+    di->bs = NULL;
+
+    vma_writer_close_stream(backup_state.vmaw, di->dev_id);
+
+    block_job_cb(bs, ret);
+
+    if (!backup_state.cancel) {
+        pvebackup_run_next_job();
+    }
+}
+
+static void pvebackup_cancel(void *opaque)
+{
+    backup_state.cancel = true;
+
+    if (!backup_state.error) {
+        error_setg(&backup_state.error, "backup cancelled");
+    }
+
+    /* drain all i/o (awake jobs waiting for aio) */
+    bdrv_drain_all();
+
+    GList *l = backup_state.di_list;
+    while (l) {
+        PVEBackupDevInfo *di = (PVEBackupDevInfo *)l->data;
+        l = g_list_next(l);
+        if (!di->completed && di->bs) {
+            BlockJob *job = di->bs->job;
+            if (job) {
+                if (!di->completed) {
+                    block_job_cancel_sync(job);
+                }
+            }
+        }
+    }
+
+    pvebackup_cleanup();
+}
+
+void qmp_backup_cancel(Error **errp)
+{
+    Coroutine *co = qemu_coroutine_create(pvebackup_cancel);
+    qemu_coroutine_enter(co, NULL);
+
+    while (backup_state.vmaw) {
+        /* vma writer use main aio context */
+        aio_poll(qemu_get_aio_context(), true);
+    }
+}
+
+static void pvebackup_run_next_job(void)
+{
+    GList *l = backup_state.di_list;
+    while (l) {
+        PVEBackupDevInfo *di = (PVEBackupDevInfo *)l->data;
+        l = g_list_next(l);
+        if (!di->completed && di->bs && di->bs->job) {
+            BlockJob *job = di->bs->job;
+            if (block_job_is_paused(job)) {
+                bool cancel = backup_state.error || backup_state.cancel;
+                if (cancel) {
+                    block_job_cancel(job);
+                } else {
+                    block_job_resume(job);
+                }
+            }
+            return;
+        }
+    }
+
+    pvebackup_cleanup();
+}
+
+UuidInfo *qmp_backup(const char *backup_file, bool has_format,
+                    BackupFormat format,
+                    bool has_config_file, const char *config_file,
+                    bool has_devlist, const char *devlist,
+                    bool has_speed, int64_t speed, Error **errp)
+{
+    BlockBackend *blk;
+    BlockDriverState *bs = NULL;
+    Error *local_err = NULL;
+    uuid_t uuid;
+    VmaWriter *vmaw = NULL;
+    gchar **devs = NULL;
+    GList *di_list = NULL;
+    GList *l;
+    UuidInfo *uuid_info;
+
+    if (backup_state.di_list) {
+        error_set(errp, ERROR_CLASS_GENERIC_ERROR,
+                  "previous backup not finished");
+        return NULL;
+    }
+
+    /* Todo: try to auto-detect format based on file name */
+    format = has_format ? format : BACKUP_FORMAT_VMA;
+
+    if (format != BACKUP_FORMAT_VMA) {
+        error_set(errp, ERROR_CLASS_GENERIC_ERROR, "unknown backup format");
+        return NULL;
+    }
+
+    if (has_devlist) {
+        devs = g_strsplit_set(devlist, ",;:", -1);
+
+        gchar **d = devs;
+        while (d && *d) {
+            blk = blk_by_name(*d);
+            if (blk) {
+                bs = blk_bs(blk);
+                if (bdrv_is_read_only(bs)) {
+                    error_setg(errp, "Node '%s' is read only", *d);
+                    goto err;
+                }
+                if (!bdrv_is_inserted(bs)) {
+                    error_setg(errp, QERR_DEVICE_HAS_NO_MEDIUM, *d);
+                    goto err;
+                }
+                PVEBackupDevInfo *di = g_new0(PVEBackupDevInfo, 1);
+                di->bs = bs;
+                di_list = g_list_append(di_list, di);
+            } else {
+                error_set(errp, ERROR_CLASS_DEVICE_NOT_FOUND,
+                          "Device '%s' not found", *d);
+                goto err;
+            }
+            d++;
+        }
+
+    } else {
+
+        bs = NULL;
+        while ((bs = bdrv_next(bs))) {
+
+            if (!bdrv_is_inserted(bs) || bdrv_is_read_only(bs)) {
+                continue;
+            }
+
+            PVEBackupDevInfo *di = g_new0(PVEBackupDevInfo, 1);
+            di->bs = bs;
+            di_list = g_list_append(di_list, di);
+        }
+    }
+
+    if (!di_list) {
+        error_set(errp, ERROR_CLASS_GENERIC_ERROR, "empty device list");
+        goto err;
+    }
+
+    size_t total = 0;
+
+    l = di_list;
+    while (l) {
+        PVEBackupDevInfo *di = (PVEBackupDevInfo *)l->data;
+        l = g_list_next(l);
+        if (bdrv_op_is_blocked(di->bs, BLOCK_OP_TYPE_BACKUP_SOURCE, errp)) {
+            goto err;
+        }
+
+        ssize_t size = bdrv_getlength(di->bs);
+        if (size < 0) {
+            error_setg_errno(errp, -di->size, "bdrv_getlength failed");
+            goto err;
+        }
+        di->size = size;
+        total += size;
+    }
+
+    uuid_generate(uuid);
+
+    vmaw = vma_writer_create(backup_file, uuid, &local_err);
+    if (!vmaw) {
+        if (local_err) {
+            error_propagate(errp, local_err);
+        }
+        goto err;
+    }
+
+    /* register all devices for vma writer */
+    l = di_list;
+    while (l) {
+        PVEBackupDevInfo *di = (PVEBackupDevInfo *)l->data;
+        l = g_list_next(l);
+
+        const char *devname = bdrv_get_device_name(di->bs);
+        di->dev_id = vma_writer_register_stream(vmaw, devname, di->size);
+        if (di->dev_id <= 0) {
+            error_set(errp, ERROR_CLASS_GENERIC_ERROR,
+                      "register_stream failed");
+            goto err;
+        }
+    }
+
+    /* add configuration file to archive */
+    if (has_config_file) {
+        char *cdata = NULL;
+        gsize clen = 0;
+        GError *err = NULL;
+        if (!g_file_get_contents(config_file, &cdata, &clen, &err)) {
+            error_setg(errp, "unable to read file '%s'", config_file);
+            goto err;
+        }
+
+        const char *basename = g_path_get_basename(config_file);
+        if (vma_writer_add_config(vmaw, basename, cdata, clen) != 0) {
+            error_setg(errp, "unable to add config data to vma archive");
+            g_free(cdata);
+            goto err;
+        }
+        g_free(cdata);
+    }
+
+    /* initialize global backup_state now */
+
+    backup_state.cancel = false;
+
+    if (backup_state.error) {
+        error_free(backup_state.error);
+        backup_state.error = NULL;
+    }
+
+    backup_state.speed = (has_speed && speed > 0) ? speed : 0;
+
+    backup_state.start_time = time(NULL);
+    backup_state.end_time = 0;
+
+    if (backup_state.backup_file) {
+        g_free(backup_state.backup_file);
+    }
+    backup_state.backup_file = g_strdup(backup_file);
+
+    backup_state.vmaw = vmaw;
+
+    uuid_copy(backup_state.uuid, uuid);
+    uuid_unparse_lower(uuid, backup_state.uuid_str);
+
+    backup_state.di_list = di_list;
+
+    backup_state.total = total;
+    backup_state.transferred = 0;
+    backup_state.zero_bytes = 0;
+
+    /* start all jobs (paused state) */
+    l = di_list;
+    while (l) {
+        PVEBackupDevInfo *di = (PVEBackupDevInfo *)l->data;
+        l = g_list_next(l);
+
+        backup_start(di->bs, NULL, speed, MIRROR_SYNC_MODE_FULL, NULL,
+                     BLOCKDEV_ON_ERROR_REPORT, BLOCKDEV_ON_ERROR_REPORT,
+                     pvebackup_dump_cb, pvebackup_complete_cb, di,
+                     1, &local_err);
+        if (local_err != NULL) {
+            error_setg(&backup_state.error, "backup_job_create failed");
+            pvebackup_cancel(NULL);
+        }
+    }
+
+    if (!backup_state.error) {
+        pvebackup_run_next_job(); // run one job
+    }
+
+    uuid_info = g_malloc0(sizeof(*uuid_info));
+    uuid_info->UUID = g_strdup(backup_state.uuid_str);
+    return uuid_info;
+
+err:
+
+    l = di_list;
+    while (l) {
+        g_free(l->data);
+        l = g_list_next(l);
+    }
+    g_list_free(di_list);
+
+    if (devs) {
+        g_strfreev(devs);
+    }
+
+    if (vmaw) {
+        Error *err = NULL;
+        vma_writer_close(vmaw, &err);
+        unlink(backup_file);
+    }
+
+    return NULL;
+}
+
+BackupStatus *qmp_query_backup(Error **errp)
+{
+    BackupStatus *info = g_malloc0(sizeof(*info));
+
+    if (!backup_state.start_time) {
+        /* not started, return {} */
+        return info;
+    }
+
+    info->has_status = true;
+    info->has_start_time = true;
+    info->start_time = backup_state.start_time;
+
+    if (backup_state.backup_file) {
+        info->has_backup_file = true;
+        info->backup_file = g_strdup(backup_state.backup_file);
+    }
+
+    info->has_uuid = true;
+    info->uuid = g_strdup(backup_state.uuid_str);
+
+    if (backup_state.end_time) {
+        if (backup_state.error) {
+            info->status = g_strdup("error");
+            info->has_errmsg = true;
+            info->errmsg = g_strdup(error_get_pretty(backup_state.error));
+        } else {
+            info->status = g_strdup("done");
+        }
+        info->has_end_time = true;
+        info->end_time = backup_state.end_time;
+    } else {
+        info->status = g_strdup("active");
+    }
+
+    info->has_total = true;
+    info->total = backup_state.total;
+    info->has_zero_bytes = true;
+    info->zero_bytes = backup_state.zero_bytes;
+    info->has_transferred = true;
+    info->transferred = backup_state.transferred;
+
+    return info;
 }
 
 void qmp_block_stream(const char *device,
