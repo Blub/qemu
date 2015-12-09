@@ -1900,10 +1900,29 @@
 #
 # @actual: the number of bytes the balloon currently contains
 #
-# Since: 0.14.0
+# @last_update: time when stats got updated from guest
 #
+# @mem_swapped_in: number of pages swapped in within the guest
+# 
+# @mem_swapped_out: number of pages swapped out within the guest
+#
+# @major_page_faults: number of major page faults within the guest
+#
+# @minor_page_faults: number of minor page faults within the guest
+# 
+# @free_mem: amount of memory (in bytes) free in the guest
+#
+# @total_mem: amount of memory (in bytes) visible to the guest
+#
+# @max_mem: amount of memory (in bytes) assigned to the guest
+# 
+# Since: 0.14.0
 ##
-{ 'struct': 'BalloonInfo', 'data': {'actual': 'int' } }
+{ 'struct': 'BalloonInfo',
+  'data': {'actual': 'int', '*last_update': 'int', '*mem_swapped_in': 'int',
+           '*mem_swapped_out': 'int', '*major_page_faults': 'int',
+           '*minor_page_faults': 'int', '*free_mem': 'int',
+           '*total_mem': 'int', 'max_mem': 'int' } }
 
 ##
 # @query-balloon:
