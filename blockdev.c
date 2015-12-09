@@ -2912,6 +2912,11 @@ static int pvebackup_dump_cb(void *opaque, BlockDriverState *target,
 {
     PVEBackupDevInfo *di = opaque;
 
+    int size = n_sectors * BDRV_SECTOR_SIZE;
+    if (backup_state.cancel) {
+        return size; // return success
+    }
+
     if (sector_num & 0x7f) {
         if (!backup_state.error) {
             error_setg(&backup_state.error,
@@ -2922,7 +2927,6 @@ static int pvebackup_dump_cb(void *opaque, BlockDriverState *target,
     }
 
     int64_t cluster_num = sector_num >> 7;
-    int size = n_sectors * BDRV_SECTOR_SIZE;
 
     int ret = -1;
 
@@ -2930,17 +2934,27 @@ static int pvebackup_dump_cb(void *opaque, BlockDriverState *target,
         size_t zero_bytes = 0;
         ret = vma_writer_write(backup_state.vmaw, di->dev_id, cluster_num,
                                buf, &zero_bytes);
-        backup_state.zero_bytes += zero_bytes;
+        if (ret < 0) {
+            if (!backup_state.error) {
+                error_setg(&backup_state.error, "vma_writer_write error %d", ret);
+            }
+            if (di->bs && di->bs->job) {
+                block_job_cancel(di->bs->job);
+            }
+        } else {
+            backup_state.zero_bytes += zero_bytes;
+            backup_state.transferred += size;
+        }
     } else {
-        ret = size;
         if (!buf) {
             backup_state.zero_bytes += size;
         }
+        backup_state.transferred += size;
     }
 
-    backup_state.transferred += size;
+    // Note: always return success, because we want that writes succeed anyways.
 
-    return ret;
+    return size;
 }
 
 static void pvebackup_cleanup(void)
@@ -3012,7 +3026,7 @@ static void pvebackup_cancel(void *opaque)
             BlockJob *job = di->bs->job;
             if (job) {
                 if (!di->completed) {
-                    block_job_cancel_sync(job);
+                     block_job_cancel_sync(job);
                 }
             }
         }
