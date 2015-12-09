@@ -379,8 +379,37 @@ static uint64_t virtio_balloon_get_features(VirtIODevice *vdev, uint64_t f,
 static void virtio_balloon_stat(void *opaque, BalloonInfo *info)
 {
     VirtIOBalloon *dev = opaque;
-    info->actual = get_current_ram_size() - ((uint64_t) dev->actual <<
-                                             VIRTIO_BALLOON_PFN_SHIFT);
+    ram_addr_t ram_size = get_current_ram_size();
+    info->actual = ram_size - ((uint64_t) dev->actual <<
+                               VIRTIO_BALLOON_PFN_SHIFT);
+
+    info->max_mem = ram_size;
+
+    if (!(balloon_stats_enabled(dev) && balloon_stats_supported(dev) &&
+           dev->stats_last_update)) {
+       return;
+    }
+
+    info->last_update = dev->stats_last_update;
+    info->has_last_update = true;
+
+    info->mem_swapped_in = dev->stats[VIRTIO_BALLOON_S_SWAP_IN];
+    info->has_mem_swapped_in = info->mem_swapped_in >= 0 ? true : false;
+
+    info->mem_swapped_out = dev->stats[VIRTIO_BALLOON_S_SWAP_OUT];
+    info->has_mem_swapped_out = info->mem_swapped_out >= 0 ? true : false;
+
+    info->major_page_faults = dev->stats[VIRTIO_BALLOON_S_MAJFLT];
+    info->has_major_page_faults = info->major_page_faults >= 0 ? true : false;
+
+    info->minor_page_faults = dev->stats[VIRTIO_BALLOON_S_MINFLT];
+    info->has_minor_page_faults = info->minor_page_faults >= 0 ? true : false;
+
+    info->free_mem = dev->stats[VIRTIO_BALLOON_S_MEMFREE];
+    info->has_free_mem = info->free_mem >= 0 ? true : false;
+
+    info->total_mem = dev->stats[VIRTIO_BALLOON_S_MEMTOT];
+    info->has_total_mem = info->total_mem >= 0 ? true : false;
 }
 
 static void virtio_balloon_to_target(void *opaque, ram_addr_t target)
