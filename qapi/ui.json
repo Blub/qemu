@@ -199,11 +199,14 @@
 #
 # @channels: a list of @SpiceChannel for each active spice channel
 #
+# @ticket: The last ticket set with set_password
+#
 # Since: 0.14.0
 ##
 { 'struct': 'SpiceInfo',
   'data': {'enabled': 'bool', 'migrated': 'bool', '*host': 'str', '*port': 'int',
            '*tls-port': 'int', '*auth': 'str', '*compiled-version': 'str',
+           '*ticket': 'str',
            'mouse-mode': 'SpiceQueryMouseMode', '*channels': ['SpiceChannel']} }
 
 ##
