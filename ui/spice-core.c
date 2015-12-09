@@ -551,6 +551,11 @@ SpiceInfo *qmp_query_spice(Error **errp)
     micro = SPICE_SERVER_VERSION & 0xff;
     info->compiled_version = g_strdup_printf("%d.%d.%d", major, minor, micro);
 
+    if (auth_passwd) {
+        info->has_ticket = true;
+        info->ticket =  g_strdup(auth_passwd);
+    }
+
     if (port) {
         info->has_port = true;
         info->port = port;
