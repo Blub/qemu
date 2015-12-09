@@ -196,9 +196,11 @@ static struct glfs *qemu_gluster_init(GlusterConf *gconf, const char *filename,
      * TODO: Use GF_LOG_ERROR instead of hard code value of 4 here when
      * GlusterFS makes GF_LOG_* macros available to libgfapi users.
      */
-    ret = glfs_set_logging(glfs, "-", 4);
-    if (ret < 0) {
-        goto out;
+    if (!is_daemonized()) {
+        ret = glfs_set_logging(glfs, "-", 4);
+        if (ret < 0) {
+            goto out;
+        }
     }
 
     ret = glfs_init(glfs);
