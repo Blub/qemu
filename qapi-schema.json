@@ -395,7 +395,7 @@
 # @vma: Proxmox vma backup format
 ##
 { 'enum': 'BackupFormat',
-  'data': [ 'vma' ] }
+  'data': [ 'vma', 'dir' ] }
 
 ##
 # @backup:

@@ -263,7 +263,7 @@ static int extract_content(int argc, char **argv)
             g_free(statefn);
         } else if (di) {
             char *devfn = NULL;
-            int flags = BDRV_O_RDWR|BDRV_O_CACHE_WB;
+            int flags = BDRV_O_RDWR;
             bool write_zero = true;
 
             if (readmap) {
