@@ -289,7 +289,7 @@ void block_job_start(BlockJob *job)
     job->co = qemu_coroutine_create(block_job_co_entry, job);
     job->pause_count--;
     job->busy = true;
-    job->paused = false;
+    job->paused = job->pause_count > 0;
     bdrv_coroutine_enter(blk_bs(job->blk), job->co);
 }
 

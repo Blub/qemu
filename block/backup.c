@@ -558,6 +558,7 @@ BlockJob *backup_job_create(const char *job_id, BlockDriverState *bs,
                   BlockdevOnError on_target_error,
                   int creation_flags,
                   BlockCompletionFunc *cb, void *opaque,
+                  int pause_count,
                   BlockJobTxn *txn, Error **errp)
 {
     int64_t len;
@@ -682,6 +683,7 @@ BlockJob *backup_job_create(const char *job_id, BlockDriverState *bs,
     block_job_add_bdrv(&job->common, "target", target, 0, BLK_PERM_ALL,
                        &error_abort);
     job->common.len = len;
+    job->common.pause_count = pause_count;
     block_job_txn_add_job(txn, &job->common);
 
     return &job->common;
