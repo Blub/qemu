@@ -706,6 +706,10 @@ int vma_writer_close(VmaWriter *vmaw, Error **errp)
 
     int i;
 
+    while (vmaw->co_writer) {
+        aio_poll(qemu_get_aio_context(), true);
+    }
+
     assert(vmaw->co_writer == NULL);
 
     if (vmaw->cmd) {
