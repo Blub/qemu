@@ -1315,7 +1315,7 @@ EQMP
 
     {
         .name       = "backup",
-        .args_type  = "backup-file:s,format:s?,config-file:F?,speed:o?,devlist:s?",
+        .args_type  = "backup-file:s,format:s?,config-file:F?,firewall-file:F?,speed:o?,devlist:s?",
         .mhandler.cmd_new = qmp_marshal_backup,
     },
 
