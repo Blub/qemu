@@ -1151,9 +1151,9 @@ void pc_cpus_init(PCMachineState *pcms)
     /* init CPUs */
     if (machine->cpu_model == NULL) {
 #ifdef TARGET_X86_64
-        machine->cpu_model = "qemu64";
+        machine->cpu_model = "kvm64";
 #else
-        machine->cpu_model = "qemu32";
+        machine->cpu_model = "kvm32";
 #endif
     }
 
