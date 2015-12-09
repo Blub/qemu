@@ -3277,8 +3277,8 @@ static void do_drive_backup(const char *job_id, const char *device,
     }
 
     backup_start(job_id, bs, target_bs, speed, sync, bmap,
-                 on_source_error, on_target_error,
-                 block_job_cb, bs, txn, &local_err);
+                 on_source_error, on_target_error, NULL,
+                 block_job_cb, bs, 0, txn, &local_err);
     bdrv_unref(target_bs);
     if (local_err != NULL) {
         error_propagate(errp, local_err);
@@ -3371,7 +3371,7 @@ void do_blockdev_backup(const char *job_id, const char *device,
         }
     }
     backup_start(job_id, bs, target_bs, speed, sync, NULL, on_source_error,
-                 on_target_error, block_job_cb, bs, txn, &local_err);
+                 on_target_error, NULL, block_job_cb, bs, 0, txn, &local_err);
     if (local_err != NULL) {
         error_propagate(errp, local_err);
     }
