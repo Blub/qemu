@@ -2936,7 +2936,7 @@ static int pvebackup_dump_cb(void *opaque, BlockDriverState *target,
                                buf, &zero_bytes);
         if (ret < 0) {
             if (!backup_state.error) {
-                error_setg(&backup_state.error, "vma_writer_write error %d", ret);
+                vma_writer_error_propagate(backup_state.vmaw, &backup_state.error);
             }
             if (di->bs && di->bs->job) {
                 block_job_cancel(di->bs->job);
