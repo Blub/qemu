@@ -1773,7 +1773,7 @@ EQMP
     {
         .name       = "get_link_status",
         .args_type  = "name:s",
-        .mhandler.cmd_new = qmp_marshal_input_get_link_status,
+        .mhandler.cmd_new = qmp_marshal_get_link_status,
     },
 
 SQMP
