@@ -3260,7 +3260,7 @@ UuidInfo *qmp_backup(const char *backup_file, bool has_format,
             }
 
             di->target = bdrv_new();
-            if (bdrv_open(&di->target, di->targetfile, NULL, NULL, flags, NULL, &local_err) < 0) {
+            if (bdrv_open(&di->target, di->targetfile, NULL, NULL, flags, &local_err) < 0) {
                 bdrv_unref(di->target);
                 error_propagate(errp, local_err);
                 goto err;
