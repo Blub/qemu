@@ -25,6 +25,7 @@
 #include "qemu-common.h"
 #include "qemu/error-report.h"
 #include "qemu/main-loop.h"
+#include "sysemu/char.h" /* qstring_from_str */
 
 static void help(void)
 {
@@ -302,10 +303,10 @@ static int extract_content(int argc, char **argv)
 
 	    const char *tmp = g_strrstr(devfn, ".");
 	    const char *format = (tmp == NULL) ? "raw" : ++tmp;
+	    QDict *options = qdict_new();
+	    qdict_put(options, "driver", qstring_from_str(format));
 
- 	    BlockDriver *drv = bdrv_find_format(format);
-
-	    if (errp || bdrv_open(&bs, devfn, NULL, NULL, flags, drv, &errp)) {
+	    if (errp || bdrv_open(&bs, devfn, NULL, options, flags, &errp)) {
                 g_error("can't open file %s - %s", devfn,
                         error_get_pretty(errp));
             }
@@ -534,11 +535,10 @@ static int create_archive(int argc, char **argv)
         char *devname = NULL;
         path = extract_devname(path, &devname, devcount++);
 
-        BlockDriver *drv = NULL;
         Error *errp = NULL;
         BlockDriverState *bs = bdrv_new();
 
-        res = bdrv_open(&bs, path, NULL, NULL, BDRV_O_CACHE_WB , drv, &errp);
+        res = bdrv_open(&bs, path, NULL, NULL, BDRV_O_CACHE_WB, &errp);
         if (res < 0) {
             unlink(archivename);
             g_error("bdrv_open '%s' failed - %s", path, error_get_pretty(errp));
