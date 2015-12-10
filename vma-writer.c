@@ -231,9 +231,9 @@ vma_queue_write(VmaWriter *vmaw, const void *buf, size_t bytes)
     vmaw->co_writer = qemu_coroutine_self();
 
     while (done < bytes) {
-        aio_set_fd_handler(qemu_get_aio_context(), vmaw->fd, NULL, vma_co_continue_write, vmaw);
+        aio_set_fd_handler(qemu_get_aio_context(), vmaw->fd, false, NULL, vma_co_continue_write, vmaw);
         qemu_coroutine_yield();
-        aio_set_fd_handler(qemu_get_aio_context(), vmaw->fd, NULL, NULL, NULL);
+        aio_set_fd_handler(qemu_get_aio_context(), vmaw->fd, false, NULL, NULL, NULL);
         if (vmaw->status < 0) {
             DPRINTF("vma_queue_write detected canceled backup\n");
             done = -1;
