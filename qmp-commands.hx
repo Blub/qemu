@@ -4700,31 +4700,31 @@ EQMP
     {
         .name       = "savevm-start",
         .args_type  = "statefile:s?",
-        .mhandler.cmd_new = qmp_marshal_input_savevm_start,
+        .mhandler.cmd_new = qmp_marshal_savevm_start,
     },
 
     {
         .name       = "snapshot-drive",
         .args_type  = "device:s,name:s",
-        .mhandler.cmd_new = qmp_marshal_input_snapshot_drive,
+        .mhandler.cmd_new = qmp_marshal_snapshot_drive,
     },
 
     {
         .name       = "delete-drive-snapshot",
         .args_type  = "device:s,name:s",
-        .mhandler.cmd_new = qmp_marshal_input_delete_drive_snapshot,
+        .mhandler.cmd_new = qmp_marshal_delete_drive_snapshot,
     },
 
     {
         .name       = "savevm-end",
         .args_type  = "",
-        .mhandler.cmd_new = qmp_marshal_input_savevm_end,
+        .mhandler.cmd_new = qmp_marshal_savevm_end,
     },
 
     {
         .name       = "query-savevm",
         .args_type  = "",
-        .mhandler.cmd_new = qmp_marshal_input_query_savevm,
+        .mhandler.cmd_new = qmp_marshal_query_savevm,
     },
 
     {
