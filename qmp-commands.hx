@@ -1256,19 +1256,19 @@ EQMP
     {
         .name       = "backup",
         .args_type  = "backup-file:s,format:s?,config-file:F?,firewall-file:F?,speed:o?,devlist:s?",
-        .mhandler.cmd_new = qmp_marshal_input_backup,
+        .mhandler.cmd_new = qmp_marshal_backup,
     },
 
     {
         .name       = "backup-cancel",
         .args_type  = "",
-        .mhandler.cmd_new = qmp_marshal_input_backup_cancel,
+        .mhandler.cmd_new = qmp_marshal_backup_cancel,
     },
 
     {
         .name       = "query-backup",
         .args_type  = "",
-        .mhandler.cmd_new = qmp_marshal_input_query_backup,
+        .mhandler.cmd_new = qmp_marshal_query_backup,
     },
 
     {
