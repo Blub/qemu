@@ -3323,7 +3323,7 @@ UuidInfo *qmp_backup(const char *backup_file, bool has_format,
         backup_start(di->bs, di->target, speed, MIRROR_SYNC_MODE_FULL, NULL,
                      BLOCKDEV_ON_ERROR_REPORT, BLOCKDEV_ON_ERROR_REPORT,
                      pvebackup_dump_cb, pvebackup_complete_cb, di,
-                     1, &local_err);
+                     1, NULL, &local_err);
 
         if (local_err != NULL) {
             error_setg(&backup_state.error, "backup_job_create failed");
