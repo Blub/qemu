@@ -36,6 +36,8 @@ int qcrypto_tls_creds_get_dh_params_file(QCryptoTLSCreds *creds,
                                          gnutls_dh_params_t *dh_params,
                                          Error **errp);
 
+bool qcrypto_tls_creds_is_pve(QCryptoTLSCreds *creds);
+
 #endif
 
 #endif /* QCRYPTO_TLSCREDSPRIV_H */
