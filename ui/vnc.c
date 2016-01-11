@@ -55,6 +55,125 @@ static const struct timeval VNC_REFRESH_LOSSY = { 2, 0 };
 #include "vnc_keysym.h"
 #include "crypto/cipher.h"
 
+static int pve_vmid = 0;
+
+void pve_auth_setup(int vmid) {
+	pve_vmid = vmid;
+}
+
+static char *
+urlencode(char *buf, const char *value)
+{
+	static const char *hexchar = "0123456789abcdef";
+	char *p = buf;
+	int i;
+	int l = strlen(value);
+	for (i = 0; i < l; i++) {
+		char c = value[i];
+		if (('a' <= c && c <= 'z') ||
+		    ('A' <= c && c <= 'Z') ||
+		    ('0' <= c && c <= '9')) {
+			*p++ = c;
+		} else if (c == 32) {
+			*p++ = '+';
+		} else {
+			*p++ = '%';
+			*p++ = hexchar[c >> 4];
+			*p++ = hexchar[c & 15];
+		}
+	}
+	*p = 0;
+
+	return p;
+}
+
+int
+pve_auth_verify(const char *clientip, const char *username, const char *passwd)
+{
+	struct sockaddr_in server;
+
+	int sfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (sfd == -1) {
+		perror("pve_auth_verify: socket failed");
+		return -1;
+	}
+
+	struct hostent *he;
+	if ((he = gethostbyname("localhost")) == NULL) {
+		fprintf(stderr, "pve_auth_verify: error resolving hostname\n");
+		goto err;
+	}
+
+	memcpy(&server.sin_addr, he->h_addr_list[0], he->h_length);
+	server.sin_family = AF_INET;
+	server.sin_port = htons(85);
+
+	if (connect(sfd, (struct sockaddr *)&server, sizeof(server))) {
+		perror("pve_auth_verify: error connecting to server");
+		goto err;
+	}
+
+	char buf[8192];
+	char form[8192];
+
+	char *p = form;
+	p = urlencode(p, "username");
+	*p++ = '=';
+	p = urlencode(p, username);
+
+	*p++ = '&';
+	p = urlencode(p, "password");
+	*p++ = '=';
+	p = urlencode(p, passwd);
+
+ 	*p++ = '&';
+	p = urlencode(p, "path");
+	*p++ = '=';
+	char authpath[256];
+	sprintf(authpath, "/vms/%d", pve_vmid);
+	p = urlencode(p, authpath);
+
+ 	*p++ = '&';
+ 	p = urlencode(p, "privs");
+	*p++ = '=';
+ 	p = urlencode(p, "VM.Console");
+
+	sprintf(buf, "POST /api2/json/access/ticket HTTP/1.1\n"
+		"Host: localhost:85\n"
+		"Connection: close\n"
+		"PVEClientIP: %s\n"
+		"Content-Type: application/x-www-form-urlencoded\n"
+		"Content-Length: %zd\n\n%s\n", clientip, strlen(form), form);
+	ssize_t len = strlen(buf);
+	ssize_t sb = send(sfd, buf, len, 0);
+	if (sb < 0) {
+		perror("pve_auth_verify: send failed");
+		goto err;
+	}
+	if (sb != len) {
+		fprintf(stderr, "pve_auth_verify: partial send error\n");
+		goto err;
+	}
+
+	len = recv(sfd, buf, sizeof(buf) - 1, 0);
+	if (len < 0) {
+		perror("pve_auth_verify: recv failed");
+		goto err;
+	}
+
+	buf[len] = 0;
+
+	//printf("DATA:%s\n", buf);
+
+	shutdown(sfd, SHUT_RDWR);
+
+	return strncmp(buf, "HTTP/1.1 200 OK", 15);
+
+err:
+	shutdown(sfd, SHUT_RDWR);
+	return -1;
+}
+
 static QTAILQ_HEAD(, VncDisplay) vnc_displays =
     QTAILQ_HEAD_INITIALIZER(vnc_displays);
 
@@ -3355,10 +3474,16 @@ vnc_display_setup_auth(int *auth,
         if (password) {
             if (is_x509) {
                 VNC_DEBUG("Initializing VNC server with x509 password auth\n");
-                *subauth = VNC_AUTH_VENCRYPT_X509VNC;
+                if (tlscreds->pve)
+                    *subauth = VNC_AUTH_VENCRYPT_X509PLAIN;
+                else
+                    *subauth = VNC_AUTH_VENCRYPT_X509VNC;
             } else {
                 VNC_DEBUG("Initializing VNC server with TLS password auth\n");
-                *subauth = VNC_AUTH_VENCRYPT_TLSVNC;
+                if (tlscreds->pve)
+                    *subauth = VNC_AUTH_VENCRYPT_TLSPLAIN;
+                else
+                    *subauth = VNC_AUTH_VENCRYPT_TLSVNC;
             }
 
         } else if (sasl) {
@@ -3392,6 +3517,7 @@ vnc_display_create_creds(bool x509,
                          bool x509verify,
                          const char *dir,
                          const char *id,
+                         bool pve,
                          Error **errp)
 {
     gchar *credsid = g_strdup_printf("tlsvnc%s", id);
@@ -3407,6 +3533,7 @@ vnc_display_create_creds(bool x509,
                                       "endpoint", "server",
                                       "dir", dir,
                                       "verify-peer", x509verify ? "yes" : "no",
+                                      "pve", pve ? "yes" : "no",
                                       NULL);
     } else {
         creds = object_new_with_props(TYPE_QCRYPTO_TLS_CREDS_ANON,
@@ -3414,6 +3541,7 @@ vnc_display_create_creds(bool x509,
                                       credsid,
                                       &err,
                                       "endpoint", "server",
+                                      "pve", pve ? "yes" : "no",
                                       NULL);
     }
 
@@ -3880,12 +4008,17 @@ void vnc_display_open(const char *id, Error **errp)
         }
     } else {
         const char *path;
-        bool tls = false, x509 = false, x509verify = false;
+        bool tls = false, x509 = false, x509verify = false, pve = false;
         tls  = qemu_opt_get_bool(opts, "tls", false);
         path = qemu_opt_get(opts, "x509");
         if (tls || path) {
             if (path) {
                 x509 = true;
+                if (!strcmp(path, "on")) {
+                    /* magic to default to /etc/pve */
+                    path = "/etc/pve";
+                    pve = true;
+                }
             } else {
                 path = qemu_opt_get(opts, "x509verify");
                 if (path) {
@@ -3897,6 +4030,7 @@ void vnc_display_open(const char *id, Error **errp)
                                                     x509verify,
                                                     path,
                                                     vd->id,
+                                                    pve,
                                                     errp);
             if (!vd->tlscreds) {
                 goto fail;

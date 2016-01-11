@@ -462,6 +462,7 @@ static inline void cocoa_display_init(DisplayState *ds, int full_screen)
 #endif
 
 /* vnc.c */
+void pve_auth_setup(int vmid);
 void vnc_display_init(const char *id);
 void vnc_display_open(const char *id, Error **errp);
 void vnc_display_add_client(const char *id, int csock, bool skipauth);
