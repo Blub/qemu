@@ -2947,6 +2947,7 @@ static int qemu_read_default_config_file(void)
 int main(int argc, char **argv, char **envp)
 {
     int i;
+    long int vm_id_long = 0;
     int snapshot, linux_boot;
     const char *initrd_filename;
     const char *kernel_filename, *kernel_cmdline;
@@ -3777,6 +3778,14 @@ int main(int argc, char **argv, char **envp)
                                              optarg, true)) {
                     exit(1);
                 }
+                break;
+            case QEMU_OPTION_id:
+                vm_id_long = strtol(optarg, (char **) &optarg, 10);
+                if (*optarg != 0 || vm_id_long < 100 || vm_id_long > INT_MAX) {
+                    fprintf(stderr, "Invalid ID\n");
+                    exit(1);
+                }
+                pve_auth_setup(vm_id_long);
                 break;
             case QEMU_OPTION_vnc:
                 vnc_parse(optarg, &error_fatal);
