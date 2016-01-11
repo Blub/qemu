@@ -21,6 +21,7 @@
 #include "crypto/tlssession.h"
 #include "crypto/tlscredsanon.h"
 #include "crypto/tlscredsx509.h"
+#include "crypto/tlscredspriv.h"
 #include "qemu/acl.h"
 #include "trace.h"
 
