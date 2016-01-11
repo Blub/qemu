@@ -55,6 +55,7 @@ struct QCryptoTLSCreds {
 #endif
     bool verifyPeer;
     char *priority;
+    bool pve;
 };
 
 
