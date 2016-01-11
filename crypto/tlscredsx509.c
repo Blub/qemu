@@ -555,22 +555,23 @@ qcrypto_tls_creds_x509_load(QCryptoTLSCredsX509 *creds,
         *key = NULL, *dhparams = NULL;
     int ret;
     int rv = -1;
+    bool pve = qcrypto_tls_creds_is_pve(&creds->parent_obj);
 
     trace_qcrypto_tls_creds_x509_load(creds,
             creds->parent_obj.dir ? creds->parent_obj.dir : "<nodir>");
 
     if (creds->parent_obj.endpoint == QCRYPTO_TLS_CREDS_ENDPOINT_SERVER) {
         if (qcrypto_tls_creds_get_path(&creds->parent_obj,
-                                       QCRYPTO_TLS_CREDS_X509_CA_CERT,
+                                       pve ? "pve-root-ca.pem" : QCRYPTO_TLS_CREDS_X509_CA_CERT,
                                        true, &cacert, errp) < 0 ||
             qcrypto_tls_creds_get_path(&creds->parent_obj,
                                        QCRYPTO_TLS_CREDS_X509_CA_CRL,
                                        false, &cacrl, errp) < 0 ||
             qcrypto_tls_creds_get_path(&creds->parent_obj,
-                                       QCRYPTO_TLS_CREDS_X509_SERVER_CERT,
+                                       pve ? "local/pve-ssl.pem" : QCRYPTO_TLS_CREDS_X509_SERVER_CERT,
                                        true, &cert, errp) < 0 ||
             qcrypto_tls_creds_get_path(&creds->parent_obj,
-                                       QCRYPTO_TLS_CREDS_X509_SERVER_KEY,
+                                       pve ? "local/pve-ssl.key" : QCRYPTO_TLS_CREDS_X509_SERVER_KEY,
                                        true, &key, errp) < 0 ||
             qcrypto_tls_creds_get_path(&creds->parent_obj,
                                        QCRYPTO_TLS_CREDS_DH_PARAMS,
@@ -579,13 +580,13 @@ qcrypto_tls_creds_x509_load(QCryptoTLSCredsX509 *creds,
         }
     } else {
         if (qcrypto_tls_creds_get_path(&creds->parent_obj,
-                                       QCRYPTO_TLS_CREDS_X509_CA_CERT,
+                                       pve ? "pve-root-ca.pem" : QCRYPTO_TLS_CREDS_X509_CA_CERT,
                                        true, &cacert, errp) < 0 ||
             qcrypto_tls_creds_get_path(&creds->parent_obj,
-                                       QCRYPTO_TLS_CREDS_X509_CLIENT_CERT,
+                                       pve ? "local/pve-ssl.pem" : QCRYPTO_TLS_CREDS_X509_CLIENT_CERT,
                                        false, &cert, errp) < 0 ||
             qcrypto_tls_creds_get_path(&creds->parent_obj,
-                                       QCRYPTO_TLS_CREDS_X509_CLIENT_KEY,
+                                       pve ? "local/pve-ssl.key" : QCRYPTO_TLS_CREDS_X509_CLIENT_KEY,
                                        false, &key, errp) < 0) {
             goto cleanup;
         }
