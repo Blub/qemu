@@ -56,6 +56,7 @@
 { 'pragma': {
     # Commands allowed to return a non-dictionary:
     'returns-whitelist': [
+        'get_link_status',
         'human-monitor-command',
         'qom-get',
         'query-migrate-cache-size',
