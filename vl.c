@@ -2973,6 +2973,7 @@ static void set_memory_options(uint64_t *ram_slots, ram_addr_t *maxram_size,
 int main(int argc, char **argv, char **envp)
 {
     int i;
+    long int vm_id_long = 0;
     int snapshot, linux_boot;
     const char *initrd_filename;
     const char *kernel_filename, *kernel_cmdline;
@@ -3735,6 +3736,14 @@ int main(int argc, char **argv, char **envp)
                                              optarg, true)) {
                     exit(1);
                 }
+                break;
+            case QEMU_OPTION_id:
+                vm_id_long = strtol(optarg, (char **) &optarg, 10);
+                if (*optarg != 0 || vm_id_long < 100 || vm_id_long > INT_MAX) {
+                    fprintf(stderr, "Invalid ID\n");
+                    exit(1);
+                }
+                pve_auth_setup(vm_id_long);
                 break;
             case QEMU_OPTION_vnc:
             {

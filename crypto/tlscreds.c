@@ -156,6 +156,33 @@ qcrypto_tls_creds_prop_get_verify(Object *obj,
 
 
 static void
+qcrypto_tls_creds_prop_set_pve(Object *obj,
+                                 bool value,
+                                 Error **errp G_GNUC_UNUSED)
+{
+    QCryptoTLSCreds *creds = QCRYPTO_TLS_CREDS(obj);
+
+    creds->pve = value;
+}
+
+
+static bool
+qcrypto_tls_creds_prop_get_pve(Object *obj,
+                                  Error **errp G_GNUC_UNUSED)
+{
+    QCryptoTLSCreds *creds = QCRYPTO_TLS_CREDS(obj);
+
+    return creds->pve;
+}
+
+bool qcrypto_tls_creds_is_pve(QCryptoTLSCreds *creds)
+{
+    Error *errp = NULL;
+    return qcrypto_tls_creds_prop_get_pve((Object*)creds, &errp);
+}
+
+
+static void
 qcrypto_tls_creds_prop_set_dir(Object *obj,
                                const char *value,
                                Error **errp G_GNUC_UNUSED)
@@ -203,10 +230,15 @@ qcrypto_tls_creds_init(Object *obj)
     QCryptoTLSCreds *creds = QCRYPTO_TLS_CREDS(obj);
 
     creds->verifyPeer = true;
+    creds->pve = false;
 
     object_property_add_bool(obj, "verify-peer",
                              qcrypto_tls_creds_prop_get_verify,
                              qcrypto_tls_creds_prop_set_verify,
+                             NULL);
+    object_property_add_bool(obj, "pve",
+                             qcrypto_tls_creds_prop_get_pve,
+                             qcrypto_tls_creds_prop_set_pve,
                              NULL);
     object_property_add_str(obj, "dir",
                             qcrypto_tls_creds_prop_get_dir,
