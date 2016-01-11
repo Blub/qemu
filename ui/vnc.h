@@ -284,6 +284,8 @@ struct VncState
     int auth;
     int subauth; /* Used by VeNCrypt */
     char challenge[VNC_AUTH_CHALLENGE_SIZE];
+    int username_len;
+    int password_len;
     QCryptoTLSSession *tls; /* Borrowed pointer from channel, don't free */
 #ifdef CONFIG_VNC_SASL
     VncStateSASL sasl;
@@ -576,5 +578,7 @@ void vnc_tight_clear(VncState *vs);
 int vnc_zrle_send_framebuffer_update(VncState *vs, int x, int y, int w, int h);
 int vnc_zywrle_send_framebuffer_update(VncState *vs, int x, int y, int w, int h);
 void vnc_zrle_clear(VncState *vs);
+
+int pve_auth_verify(const char *clientip, const char *username, const char *passwd);
 
 #endif /* QEMU_VNC_H */
