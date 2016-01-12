@@ -3365,6 +3365,7 @@ static void vnc_display_close(VncDisplay *vs)
     vs->subauth = VNC_AUTH_INVALID;
     if (vs->tlscreds) {
         object_unparent(OBJECT(vs->tlscreds));
+        vs->tlscreds = NULL;
     }
     g_free(vs->tlsaclname);
     vs->tlsaclname = NULL;
