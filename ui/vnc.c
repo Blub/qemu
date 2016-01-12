@@ -3881,9 +3881,8 @@ void vnc_display_open(const char *id, Error **errp)
         const char *path;
         bool tls = false, x509 = false, x509verify = false;
         tls  = qemu_opt_get_bool(opts, "tls", false);
-        if (tls) {
-            path = qemu_opt_get(opts, "x509");
-
+        path = qemu_opt_get(opts, "x509");
+        if (tls || path) {
             if (path) {
                 x509 = true;
             } else {
