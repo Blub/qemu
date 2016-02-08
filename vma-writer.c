@@ -130,7 +130,6 @@ int vma_writer_add_config(VmaWriter *vmaw, const char *name, gpointer data,
     assert(vmaw->config_count < VMA_MAX_CONFIGS);
     assert(name);
     assert(data);
-    assert(len);
 
     gchar *basename = g_path_get_basename(name);
     uint32_t name_ptr = allocate_header_string(vmaw, basename);
