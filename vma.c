@@ -301,10 +301,17 @@ static int extract_content(int argc, char **argv)
 
             BlockDriverState *bs = bdrv_new();
 
-	    const char *tmp = g_strrstr(devfn, ".");
-	    const char *format = (tmp == NULL) ? "raw" : ++tmp;
-	    QDict *options = qdict_new();
-	    qdict_put(options, "driver", qstring_from_str(format));
+	    size_t devlen = strlen(devfn);
+	    bool protocol = path_has_protocol(devfn);
+	    QDict *options = NULL;
+	    if (devlen > 4 && strcmp(devfn+devlen-4, ".raw") == 0 && !protocol) {
+		/* explicit raw format */
+		options = qdict_new();
+		qdict_put(options, "driver", qstring_from_str("raw"));
+	    } else if (protocol) {
+		/* tell bdrv_open to honor the protocol */
+		flags |= BDRV_O_PROTOCOL;
+	    }
 
 	    if (errp || bdrv_open(&bs, devfn, NULL, options, flags, &errp)) {
                 g_error("can't open file %s - %s", devfn,
