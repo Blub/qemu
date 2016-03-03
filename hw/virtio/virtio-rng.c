@@ -66,6 +66,13 @@ static void chr_read(void *opaque, const void *buf, size_t size)
         trace_virtio_rng_pushed(vrng, len);
     }
     virtio_notify(vdev, vrng->vq);
+
+    if (!virtio_queue_empty(vrng->vq)) {
+        /* If we didn't drain the queue, call virtio_rng_process
+         * to take care of asking for more data as appropriate.
+         */
+        virtio_rng_process(vrng);
+    }
 }
 
 static void virtio_rng_process(VirtIORNG *vrng)
