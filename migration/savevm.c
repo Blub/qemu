@@ -1111,7 +1111,7 @@ int qemu_savevm_state_complete_precopy(QEMUFile *f, bool iterable_only)
     QJSON *vmdesc;
     int vmdesc_len;
     SaveStateEntry *se;
-    int ret;
+    int ret = -1;
     bool in_postcopy = migration_in_postcopy(migrate_get_current());
 
     trace_savevm_state_complete_precopy();
