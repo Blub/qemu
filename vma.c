@@ -130,6 +130,7 @@ static int list_content(int argc, char **argv)
 typedef struct RestoreMap {
     char *devname;
     char *path;
+    char *format;
     bool write_zero;
 } RestoreMap;
 
@@ -217,13 +218,24 @@ static int extract_content(int argc, char **argv)
                 }
             }
 
+            char *format = NULL;
+            if (strncmp(line, "format=", sizeof("format=")-1) == 0) {
+                format = line + sizeof("format=")-1;
+                char *colon = strchr(format, ':');
+                if (!colon) {
+                    g_error("read map failed - found only a format ('%s')", inbuf);
+                }
+                format = g_strndup(format, colon - format);
+                line = colon+1;
+            }
+
             const char *path;
             bool write_zero;
             if (line[0] == '0' && line[1] == ':') {
-                path = inbuf + 2;
+                path = line + 2;
                 write_zero = false;
             } else if (line[0] == '1' && line[1] == ':') {
-                path = inbuf + 2;
+                path = line + 2;
                 write_zero = true;
             } else {
                 g_error("read map failed - parse error ('%s')", inbuf);
@@ -239,6 +251,7 @@ static int extract_content(int argc, char **argv)
             RestoreMap *map = g_new0(RestoreMap, 1);
             map->devname = g_strdup(devname);
             map->path = g_strdup(path);
+            map->format = format;
             map->write_zero = write_zero;
 
             g_hash_table_insert(devmap, map->devname, map);
@@ -263,6 +276,7 @@ static int extract_content(int argc, char **argv)
             g_free(statefn);
         } else if (di) {
             char *devfn = NULL;
+            const char *format = NULL;
             int flags = BDRV_O_RDWR;
             bool write_zero = true;
 
@@ -273,6 +287,7 @@ static int extract_content(int argc, char **argv)
                     g_error("no device name mapping for %s", di->devname);
                 }
                 devfn = map->path;
+                format = map->format;
                 write_zero = map->write_zero;
             } else {
                 devfn = g_strdup_printf("%s/tmp-disk-%s.raw",
@@ -295,15 +310,20 @@ static int extract_content(int argc, char **argv)
             BlockDriverState *bs = bdrv_new();
 
 	    size_t devlen = strlen(devfn);
-	    bool protocol = path_has_protocol(devfn);
 	    QDict *options = NULL;
-	    if (devlen > 4 && strcmp(devfn+devlen-4, ".raw") == 0 && !protocol) {
+            if (format) {
+                /* explicit format from commandline */
+                options = qdict_new();
+                qdict_put(options, "driver", qstring_from_str(format));
+            } else if ((devlen > 4 && strcmp(devfn+devlen-4, ".raw") == 0) ||
+	               strncmp(devfn, "/dev/", 5) == 0)
+	    {
+                /* This part is now deprecated for PVE as well (just as qemu
+                 * deprecated not specifying an explicit raw format, too.
+                 */
 		/* explicit raw format */
 		options = qdict_new();
 		qdict_put(options, "driver", qstring_from_str("raw"));
-	    } else if (protocol) {
-		/* tell bdrv_open to honor the protocol */
-		flags |= BDRV_O_PROTOCOL;
 	    }
 
 	    if (errp || bdrv_open(&bs, devfn, NULL, options, flags, &errp)) {
