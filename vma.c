@@ -19,6 +19,7 @@
 #include "qemu/error-report.h"
 #include "qemu/main-loop.h"
 #include "sysemu/char.h" /* qstring_from_str */
+#include "sysemu/block-backend.h"
 
 static void help(void)
 {
@@ -263,6 +264,8 @@ static int extract_content(int argc, char **argv)
     int vmstate_fd = -1;
     guint8 vmstate_stream = 0;
 
+    BlockBackend *blk = NULL;
+
     for (i = 1; i < 255; i++) {
         VmaDeviceInfo *di = vma_reader_get_device_info(vmar, i);
         if (di && (strcmp(di->devname, "vmstate") == 0)) {
@@ -307,8 +310,6 @@ static int extract_content(int argc, char **argv)
                 write_zero = false;
             }
 
-            BlockDriverState *bs = bdrv_new();
-
 	    size_t devlen = strlen(devfn);
 	    QDict *options = NULL;
             if (format) {
@@ -326,10 +327,14 @@ static int extract_content(int argc, char **argv)
 		qdict_put(options, "driver", qstring_from_str("raw"));
 	    }
 
-	    if (errp || bdrv_open(&bs, devfn, NULL, options, flags, &errp)) {
+
+	    if (errp || !(blk = blk_new_open(devfn, NULL, options, flags, &errp))) {
                 g_error("can't open file %s - %s", devfn,
                         error_get_pretty(errp));
             }
+
+	    BlockDriverState *bs = blk_bs(blk);
+
             if (vma_reader_register_bs(vmar, i, bs, write_zero, &errp) < 0) {
                 g_error("%s", error_get_pretty(errp));
             }
@@ -361,6 +366,8 @@ static int extract_content(int argc, char **argv)
     }
 
     vma_reader_destroy(vmar);
+
+    blk_unref(blk);
 
     bdrv_close_all();
 
