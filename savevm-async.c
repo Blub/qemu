@@ -253,7 +253,7 @@ void qmp_savevm_start(bool has_statefile, const char *statefile, Error **errp)
 {
     Error *local_err = NULL;
 
-    int bdrv_oflags = BDRV_O_RDWR;
+    int bdrv_oflags = BDRV_O_RDWR | BDRV_O_NO_FLUSH;
     int ret;
 
     if (snap_state.state != SAVE_STATE_DONE) {

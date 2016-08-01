@@ -280,7 +280,7 @@ static int extract_content(int argc, char **argv)
         } else if (di) {
             char *devfn = NULL;
             const char *format = NULL;
-            int flags = BDRV_O_RDWR;
+            int flags = BDRV_O_RDWR | BDRV_O_NO_FLUSH;
             bool write_zero = true;
 
             if (readmap) {
