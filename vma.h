@@ -140,7 +140,7 @@ VmaHeader *vma_reader_get_header(VmaReader *vmar);
 GList *vma_reader_get_config_data(VmaReader *vmar);
 VmaDeviceInfo *vma_reader_get_device_info(VmaReader *vmar, guint8 dev_id);
 int vma_reader_register_bs(VmaReader *vmar, guint8 dev_id,
-                           BlockDriverState *bs, bool write_zeroes,
+                           BlockBackend *target, bool write_zeroes,
                            Error **errp);
 int vma_reader_restore(VmaReader *vmar, int vmstate_fd, bool verbose,
                        Error **errp);

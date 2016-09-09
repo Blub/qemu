@@ -333,9 +333,7 @@ static int extract_content(int argc, char **argv)
                         error_get_pretty(errp));
             }
 
-	    BlockDriverState *bs = blk_bs(blk);
-
-            if (vma_reader_register_bs(vmar, i, bs, write_zero, &errp) < 0) {
+            if (vma_reader_register_bs(vmar, i, blk, write_zero, &errp) < 0) {
                 g_error("%s", error_get_pretty(errp));
             }
 
@@ -427,7 +425,7 @@ static int verify_content(int argc, char **argv)
 }
 
 typedef struct BackupJob {
-    BlockDriverState *bs;
+    BlockBackend *target;
     int64_t len;
     VmaWriter *vmaw;
     uint8_t dev_id;
@@ -456,7 +454,7 @@ static void coroutine_fn backup_run(void *opaque)
     int64_t start, end;
     int ret = 0;
 
-    unsigned char *buf = qemu_blockalign(job->bs, VMA_CLUSTER_SIZE);
+    unsigned char *buf = blk_blockalign(job->target, VMA_CLUSTER_SIZE);
 
     start = 0;
     end = DIV_ROUND_UP(job->len / BDRV_SECTOR_SIZE,
@@ -467,8 +465,8 @@ static void coroutine_fn backup_run(void *opaque)
         iov.iov_len = VMA_CLUSTER_SIZE;
         qemu_iovec_init_external(&qiov, &iov, 1);
 
-        ret = bdrv_co_readv(job->bs, start * BACKUP_SECTORS_PER_CLUSTER,
-                            BACKUP_SECTORS_PER_CLUSTER, &qiov);
+        ret = blk_co_preadv(job->target, start * BACKUP_SECTORS_PER_CLUSTER,
+                            BACKUP_SECTORS_PER_CLUSTER, &qiov, 0);
         if (ret < 0) {
             vma_writer_set_error(job->vmaw, "read error", -1);
             goto out;
@@ -563,14 +561,14 @@ static int create_archive(int argc, char **argv)
         path = extract_devname(path, &devname, devcount++);
 
         Error *errp = NULL;
-        BlockDriverState *bs;
+        BlockBackend *target;
 
-        bs = bdrv_open(path, NULL, NULL, 0, &errp);
-        if (!bs) {
+        target = blk_new_open(path, NULL, NULL, 0, &errp);
+        if (!target) {
             unlink(archivename);
             g_error("bdrv_open '%s' failed - %s", path, error_get_pretty(errp));
         }
-        int64_t size = bdrv_getlength(bs);
+        int64_t size = blk_getlength(target);
         int dev_id = vma_writer_register_stream(vmaw, devname, size);
         if (dev_id <= 0) {
             unlink(archivename);
@@ -579,7 +577,7 @@ static int create_archive(int argc, char **argv)
 
         BackupJob *job = g_new0(BackupJob, 1);
         job->len = size;
-        job->bs = bs;
+        job->target = target;
         job->vmaw = vmaw;
         job->dev_id = dev_id;
 
