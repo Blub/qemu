@@ -25,7 +25,7 @@
 static unsigned char zero_vma_block[VMA_BLOCK_SIZE];
 
 typedef struct VmaRestoreState {
-    BlockDriverState *bs;
+    BlockBackend *target;
     bool write_zeroes;
     unsigned long *bitmap;
     int bitmap_size;
@@ -423,12 +423,12 @@ VmaDeviceInfo *vma_reader_get_device_info(VmaReader *vmar, guint8 dev_id)
 }
 
 static void allocate_rstate(VmaReader *vmar,  guint8 dev_id,
-                            BlockDriverState *bs, bool write_zeroes)
+                            BlockBackend *target, bool write_zeroes)
 {
     assert(vmar);
     assert(dev_id);
 
-    vmar->rstate[dev_id].bs = bs;
+    vmar->rstate[dev_id].target = target;
     vmar->rstate[dev_id].write_zeroes = write_zeroes;
 
     int64_t size = vmar->devinfo[dev_id].size;
@@ -443,15 +443,15 @@ static void allocate_rstate(VmaReader *vmar,  guint8 dev_id,
     vmar->cluster_count += size/VMA_CLUSTER_SIZE;
 }
 
-int vma_reader_register_bs(VmaReader *vmar, guint8 dev_id, BlockDriverState *bs,
+int vma_reader_register_bs(VmaReader *vmar, guint8 dev_id, BlockBackend *target,
                            bool write_zeroes, Error **errp)
 {
     assert(vmar);
-    assert(bs != NULL);
+    assert(target != NULL);
     assert(dev_id);
-    assert(vmar->rstate[dev_id].bs == NULL);
+    assert(vmar->rstate[dev_id].target == NULL);
 
-    int64_t size = bdrv_getlength(bs);
+    int64_t size = blk_getlength(target);
     int64_t size_diff = size - vmar->devinfo[dev_id].size;
 
     /* storage types can have different size restrictions, so it
@@ -465,7 +465,7 @@ int vma_reader_register_bs(VmaReader *vmar, guint8 dev_id, BlockDriverState *bs,
         return -1;
     }
 
-    allocate_rstate(vmar, dev_id, bs, write_zeroes);
+    allocate_rstate(vmar, dev_id, target, write_zeroes);
 
     return 0;
 }
@@ -507,7 +507,7 @@ static size_t full_write(int fd, void *buf, size_t len)
 }
 
 static int restore_write_data(VmaReader *vmar, guint8 dev_id,
-                              BlockDriverState *bs, int vmstate_fd,
+                              BlockBackend *target, int vmstate_fd,
                               unsigned char *buf, int64_t sector_num,
                               int nb_sectors, Error **errp)
 {
@@ -523,10 +523,10 @@ static int restore_write_data(VmaReader *vmar, guint8 dev_id,
             }
         }
     } else {
-        int res = bdrv_write(bs, sector_num, buf, nb_sectors);
+        int res = blk_pwrite(target, sector_num * BDRV_SECTOR_SIZE, buf, nb_sectors * BDRV_SECTOR_SIZE, 0);
         if (res < 0) {
-            error_setg(errp, "bdrv_write to %s failed (%d)",
-                       bdrv_get_device_name(bs), res);
+            error_setg(errp, "blk_pwrite to %s failed (%d)",
+                       bdrv_get_device_name(blk_bs(target)), res);
             return -1;
         }
     }
@@ -556,11 +556,11 @@ static int restore_extent(VmaReader *vmar, unsigned char *buf,
         }
 
         VmaRestoreState *rstate = &vmar->rstate[dev_id];
-        BlockDriverState *bs = NULL;
+        BlockBackend *target = NULL;
 
         if (dev_id != vmar->vmstate_stream) {
-            bs = rstate->bs;
-            if (!verify && !bs) {
+            target = rstate->target;
+            if (!verify && !target) {
                 error_setg(errp, "got wrong dev id %d", dev_id);
                 return -1;
             }
@@ -618,7 +618,7 @@ static int restore_extent(VmaReader *vmar, unsigned char *buf,
 
             if (!verify) {
                 int nb_sectors = end_sector - sector_num;
-                if (restore_write_data(vmar, dev_id, bs, vmstate_fd,
+                if (restore_write_data(vmar, dev_id, target, vmstate_fd,
                                        buf + start, sector_num, nb_sectors,
                                        errp) < 0) {
                     return -1;
@@ -654,7 +654,7 @@ static int restore_extent(VmaReader *vmar, unsigned char *buf,
 
                     if (!verify) {
                         int nb_sectors = end_sector - sector_num;
-                        if (restore_write_data(vmar, dev_id, bs, vmstate_fd,
+                        if (restore_write_data(vmar, dev_id, target, vmstate_fd,
                                                buf + start, sector_num,
                                                nb_sectors, errp) < 0) {
                             return -1;
@@ -678,7 +678,7 @@ static int restore_extent(VmaReader *vmar, unsigned char *buf,
                         }
 
                         if (rstate->write_zeroes && !verify) {
-                            if (restore_write_data(vmar, dev_id, bs, vmstate_fd,
+                            if (restore_write_data(vmar, dev_id, target, vmstate_fd,
                                                    zero_vma_block, sector_num,
                                                    nb_sectors, errp) < 0) {
                                 return -1;
@@ -786,12 +786,12 @@ static int vma_reader_restore_full(VmaReader *vmar, int vmstate_fd,
     int i;
     for (i = 1; i < 256; i++) {
         VmaRestoreState *rstate = &vmar->rstate[i];
-        if (!rstate->bs) {
+        if (!rstate->target) {
             continue;
         }
 
-        if (bdrv_flush(rstate->bs) < 0) {
-            error_setg(errp, "vma bdrv_flush %s failed",
+        if (blk_flush(rstate->target) < 0) {
+            error_setg(errp, "vma blk_flush %s failed",
                        vmar->devinfo[i].devname);
             return -1;
         }
