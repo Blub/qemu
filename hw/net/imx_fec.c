@@ -220,6 +220,8 @@ static const VMStateDescription vmstate_imx_eth = {
 #define PHY_INT_PARFAULT            (1 << 2)
 #define PHY_INT_AUTONEG_PAGE        (1 << 1)
 
+#define IMX_MAX_DESC                1024
+
 static void imx_eth_update(IMXFECState *s);
 
 /*
@@ -402,12 +404,12 @@ static void imx_eth_update(IMXFECState *s)
 
 static void imx_fec_do_tx(IMXFECState *s)
 {
-    int frame_size = 0;
+    int frame_size = 0, descnt = 0;
     uint8_t frame[ENET_MAX_FRAME_SIZE];
     uint8_t *ptr = frame;
     uint32_t addr = s->tx_descriptor;
 
-    while (1) {
+    while (descnt++ < IMX_MAX_DESC) {
         IMXFECBufDesc bd;
         int len;
 
