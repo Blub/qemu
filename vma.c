@@ -465,8 +465,8 @@ static void coroutine_fn backup_run(void *opaque)
         iov.iov_len = VMA_CLUSTER_SIZE;
         qemu_iovec_init_external(&qiov, &iov, 1);
 
-        ret = blk_co_preadv(job->target, start * BACKUP_SECTORS_PER_CLUSTER,
-                            BACKUP_SECTORS_PER_CLUSTER, &qiov, 0);
+        ret = blk_co_preadv(job->target, start * VMA_CLUSTER_SIZE,
+                            VMA_CLUSTER_SIZE, &qiov, 0);
         if (ret < 0) {
             vma_writer_set_error(job->vmaw, "read error", -1);
             goto out;
