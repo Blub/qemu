@@ -341,9 +341,11 @@ static struct glfs *qemu_gluster_glfs_init(BlockdevOptionsGluster *gconf,
         }
     }
 
-    ret = glfs_set_logging(glfs, "-", gconf->debug_level);
-    if (ret < 0) {
-        goto out;
+    if (!is_daemonized()) {
+        ret = glfs_set_logging(glfs, "-", gconf->debug_level);
+        if (ret < 0) {
+            goto out;
+        }
     }
 
     ret = glfs_init(glfs);
