@@ -469,6 +469,7 @@ void qmp_delete_drive_snapshot(const char *device, const char *name,
     BlockDriverState *bs;
     QEMUSnapshotInfo sn1, *sn = &sn1;
     Error *local_err = NULL;
+    AioContext *aio_context;
 
     int ret;
 
@@ -485,22 +486,28 @@ void qmp_delete_drive_snapshot(const char *device, const char *name,
         return;
     }
 
+    aio_context = bdrv_get_aio_context(bs);
+    aio_context_acquire(aio_context);
+
     if (!bdrv_can_snapshot(bs)) {
         error_setg(errp, QERR_UNSUPPORTED);
-        return;
+        goto out;
     }
 
     if (bdrv_snapshot_find(bs, sn, name) < 0) {
         /* return success if snapshot does not exists */
-        return;
+        goto out;
     }
 
     ret = bdrv_snapshot_delete(bs, NULL, name, &local_err);
     if (ret < 0) {
         error_set(errp, ERROR_CLASS_GENERIC_ERROR,
                   "Error while deleting snapshot on '%s'\n", device);
-        return;
+        goto out;
     }
+
+out:
+    aio_context_release(aio_context);
 }
 
 static ssize_t loadstate_get_buffer(void *opaque, uint8_t *buf, int64_t pos,
