@@ -42,6 +42,7 @@ typedef struct GlusterAIOCB {
     int ret;
     Coroutine *coroutine;
     AioContext *aio_context;
+    bool is_write;
 } GlusterAIOCB;
 
 typedef struct BDRVGlusterState {
@@ -711,8 +712,10 @@ static void gluster_finish_aiocb(struct glfs_fd *fd, ssize_t ret, void *arg)
         acb->ret = 0; /* Success */
     } else if (ret < 0) {
         acb->ret = -errno; /* Read/Write failed */
+    } else if (acb->is_write) {
+        acb->ret = -EIO; /* Partial write - fail it */
     } else {
-        acb->ret = -EIO; /* Partial read/write - fail it */
+        acb->ret = 0; /* Success */
     }
 
     aio_co_schedule(acb->aio_context, acb->coroutine);
@@ -960,6 +963,7 @@ static coroutine_fn int qemu_gluster_co_pwrite_zeroes(BlockDriverState *bs,
     acb.ret = 0;
     acb.coroutine = qemu_coroutine_self();
     acb.aio_context = bdrv_get_aio_context(bs);
+    acb.is_write = true;
 
     ret = glfs_zerofill_async(s->fd, offset, size, gluster_finish_aiocb, &acb);
     if (ret < 0) {
@@ -1086,9 +1090,11 @@ static coroutine_fn int qemu_gluster_co_rw(BlockDriverState *bs,
     acb.aio_context = bdrv_get_aio_context(bs);
 
     if (write) {
+        acb.is_write = true;
         ret = glfs_pwritev_async(s->fd, qiov->iov, qiov->niov, offset, 0,
                                  gluster_finish_aiocb, &acb);
     } else {
+        acb.is_write = false;
         ret = glfs_preadv_async(s->fd, qiov->iov, qiov->niov, offset, 0,
                                 gluster_finish_aiocb, &acb);
     }
@@ -1161,6 +1167,7 @@ static coroutine_fn int qemu_gluster_co_flush_to_disk(BlockDriverState *bs)
     acb.ret = 0;
     acb.coroutine = qemu_coroutine_self();
     acb.aio_context = bdrv_get_aio_context(bs);
+    acb.is_write = true;
 
     ret = glfs_fsync_async(s->fd, gluster_finish_aiocb, &acb);
     if (ret < 0) {
@@ -1207,6 +1214,7 @@ static coroutine_fn int qemu_gluster_co_pdiscard(BlockDriverState *bs,
     acb.ret = 0;
     acb.coroutine = qemu_coroutine_self();
     acb.aio_context = bdrv_get_aio_context(bs);
+    acb.is_write = true;
 
     ret = glfs_discard_async(s->fd, offset, size, gluster_finish_aiocb, &acb);
     if (ret < 0) {
