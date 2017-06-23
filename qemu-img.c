@@ -4035,10 +4035,12 @@ out:
 #define C_IF      04
 #define C_OF      010
 #define C_SKIP    020
+#define C_OSIZE   040
 
 struct DdInfo {
     unsigned int flags;
     int64_t count;
+    int64_t osize;
 };
 
 struct DdIo {
@@ -4117,6 +4119,20 @@ static int img_dd_skip(const char *arg,
     return 0;
 }
 
+static int img_dd_osize(const char *arg,
+                        struct DdIo *in, struct DdIo *out,
+                        struct DdInfo *dd)
+{
+    dd->osize = cvtnum(arg);
+
+    if (dd->osize < 0) {
+        error_report("invalid number: '%s'", arg);
+        return 1;
+    }
+
+    return 0;
+}
+
 static int img_dd(int argc, char **argv)
 {
     int ret = 0;
@@ -4156,6 +4172,7 @@ static int img_dd(int argc, char **argv)
         { "if", img_dd_if, C_IF },
         { "of", img_dd_of, C_OF },
         { "skip", img_dd_skip, C_SKIP },
+        { "osize", img_dd_osize, C_OSIZE },
         { NULL, NULL, 0 }
     };
     const struct option long_options[] = {
@@ -4223,84 +4240,106 @@ static int img_dd(int argc, char **argv)
         arg = NULL;
     }
 
-    if (!(dd.flags & C_IF && dd.flags & C_OF)) {
-        error_report("Must specify both input and output files");
+    if (!(dd.flags & C_IF) && (!fmt || strcmp(fmt, "raw") != 0)) {
+        error_report("Input format must be raw when readin from stdin");
         ret = -1;
         goto out;
     }
-    blk1 = img_open(image_opts, in.filename, fmt, 0, false, false);
+    if (!(dd.flags & C_OF) && strcmp(out_fmt, "raw") != 0) {
+        error_report("Output format must be raw when writing to stdout");
+        ret = -1;
+        goto out;
+    }
+    if (dd.flags & C_IF) {
+        blk1 = img_open(image_opts, in.filename, fmt, 0, false, false);
 
-    if (!blk1) {
-        ret = -1;
-        goto out;
+        if (!blk1) {
+            ret = -1;
+            goto out;
+        }
     }
 
-    drv = bdrv_find_format(out_fmt);
-    if (!drv) {
-        error_report("Unknown file format");
-        ret = -1;
-        goto out;
-    }
-    proto_drv = bdrv_find_protocol(out.filename, true, &local_err);
-
-    if (!proto_drv) {
-        error_report_err(local_err);
-        ret = -1;
-        goto out;
-    }
-    if (!drv->create_opts) {
-        error_report("Format driver '%s' does not support image creation",
-                     drv->format_name);
-        ret = -1;
-        goto out;
-    }
-    if (!proto_drv->create_opts) {
-        error_report("Protocol driver '%s' does not support image creation",
-                     proto_drv->format_name);
-        ret = -1;
-        goto out;
-    }
-    create_opts = qemu_opts_append(create_opts, drv->create_opts);
-    create_opts = qemu_opts_append(create_opts, proto_drv->create_opts);
-
-    opts = qemu_opts_create(create_opts, NULL, 0, &error_abort);
-
-    size = blk_getlength(blk1);
-    if (size < 0) {
-        error_report("Failed to get size for '%s'", in.filename);
+    if (dd.flags & C_OSIZE) {
+        size = dd.osize;
+    } else if (dd.flags & C_IF) {
+        size = blk_getlength(blk1);
+        if (size < 0) {
+            error_report("Failed to get size for '%s'", in.filename);
+            ret = -1;
+            goto out;
+        }
+    } else if (dd.flags & C_COUNT) {
+        size = dd.count * in.bsz;
+    } else {
+        error_report("Output size must be known when reading from stdin");
         ret = -1;
         goto out;
     }
 
-    if (dd.flags & C_COUNT && dd.count <= INT64_MAX / in.bsz &&
+    if (!(dd.flags & C_OSIZE) && dd.flags & C_COUNT && dd.count <= INT64_MAX / in.bsz &&
         dd.count * in.bsz < size) {
         size = dd.count * in.bsz;
     }
 
-    /* Overflow means the specified offset is beyond input image's size */
-    if (dd.flags & C_SKIP && (in.offset > INT64_MAX / in.bsz ||
-                              size < in.bsz * in.offset)) {
-        qemu_opt_set_number(opts, BLOCK_OPT_SIZE, 0, &error_abort);
-    } else {
-        qemu_opt_set_number(opts, BLOCK_OPT_SIZE,
-                            size - in.bsz * in.offset, &error_abort);
-    }
 
-    ret = bdrv_create(drv, out.filename, opts, &local_err);
-    if (ret < 0) {
-        error_reportf_err(local_err,
-                          "%s: error while creating output image: ",
-                          out.filename);
-        ret = -1;
-        goto out;
-    }
+    if (dd.flags & C_OF) {
+        drv = bdrv_find_format(out_fmt);
+        if (!drv) {
+            error_report("Unknown file format");
+            ret = -1;
+            goto out;
+        }
+        proto_drv = bdrv_find_protocol(out.filename, true, &local_err);
 
-    blk2 = img_open(image_opts, out.filename, out_fmt, BDRV_O_RDWR,
-                    false, false);
+        if (!proto_drv) {
+            error_report_err(local_err);
+            ret = -1;
+            goto out;
+        }
+        if (!drv->create_opts) {
+            error_report("Format driver '%s' does not support image creation",
+                         drv->format_name);
+            ret = -1;
+            goto out;
+        }
+        if (!proto_drv->create_opts) {
+            error_report("Protocol driver '%s' does not support image creation",
+                         proto_drv->format_name);
+            ret = -1;
+            goto out;
+        }
+        create_opts = qemu_opts_append(create_opts, drv->create_opts);
+        create_opts = qemu_opts_append(create_opts, proto_drv->create_opts);
 
-    if (!blk2) {
-        ret = -1;
-        goto out;
+        opts = qemu_opts_create(create_opts, NULL, 0, &error_abort);
+
+        /* Overflow means the specified offset is beyond input image's size */
+        if (dd.flags & C_OSIZE) {
+            qemu_opt_set_number(opts, BLOCK_OPT_SIZE, size, &error_abort);
+        } else if (dd.flags & C_SKIP && (in.offset > INT64_MAX / in.bsz ||
+                                         size < in.bsz * in.offset)) {
+            qemu_opt_set_number(opts, BLOCK_OPT_SIZE, 0, &error_abort);
+        } else {
+            qemu_opt_set_number(opts, BLOCK_OPT_SIZE,
+                                size - in.bsz * in.offset, &error_abort);
+        }
+
+        ret = bdrv_create(drv, out.filename, opts, &local_err);
+        if (ret < 0) {
+            error_reportf_err(local_err,
+                              "%s: error while creating output image: ",
+                              out.filename);
+            ret = -1;
+            goto out;
+        }
+
+        blk2 = img_open(image_opts, out.filename, out_fmt, BDRV_O_RDWR,
+                        false, false);
+
+        if (!blk2) {
+            ret = -1;
+            goto out;
+        }
     }
 
     if (dd.flags & C_SKIP && (in.offset > INT64_MAX / in.bsz ||
@@ -4318,11 +4357,18 @@ static int img_dd(int argc, char **argv)
 
     for (out_pos = 0; in_pos < size; block_count++) {
         int in_ret, out_ret;
+        size_t in_bsz = in_pos + in.bsz > size ? size - in_pos : in.bsz;
 
-        if (in_pos + in.bsz > size) {
-            in_ret = blk_pread(blk1, in_pos, in.buf, size - in_pos);
+        if (blk1) {
+            in_ret = blk_pread(blk1, in_pos, in.buf, in_bsz);
         } else {
-            in_ret = blk_pread(blk1, in_pos, in.buf, in.bsz);
+            in_ret = read(STDIN_FILENO, in.buf, in_bsz);
+            if (in_ret == 0) {
+                /* early EOF is considered an error */
+                error_report("Input ended unexpectedly");
+                ret = -1;
+                goto out;
+            }
         }
         if (in_ret < 0) {
             error_report("error while reading from input image file: %s",
@@ -4332,9 +4378,13 @@ static int img_dd(int argc, char **argv)
         }
         in_pos += in_ret;
 
-        out_ret = blk_pwrite(blk2, out_pos, in.buf, in_ret, 0);
+        if (blk2) {
+            out_ret = blk_pwrite(blk2, out_pos, in.buf, in_ret, 0);
+        } else {
+            out_ret = write(STDOUT_FILENO, in.buf, in_ret);
+        }
 
-        if (out_ret < 0) {
+        if (out_ret != in_ret) {
             error_report("error while writing to output image file: %s",
                          strerror(-out_ret));
             ret = -1;
