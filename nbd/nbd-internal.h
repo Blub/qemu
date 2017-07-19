@@ -149,4 +149,6 @@ struct NBDTLSHandshakeData {
 void nbd_tls_handshake(QIOTask *task,
                        void *opaque);
 
+int nbd_drop(QIOChannel *ioc, size_t size);
+
 #endif

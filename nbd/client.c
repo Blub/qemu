@@ -86,32 +86,6 @@ static QTAILQ_HEAD(, NBDExport) exports = QTAILQ_HEAD_INITIALIZER(exports);
 
 */
 
-/* Discard length bytes from channel.  Return -errno on failure and 0 on
- * success*/
-static int drop_sync(QIOChannel *ioc, size_t size)
-{
-    ssize_t ret = 0;
-    char small[1024];
-    char *buffer;
-
-    buffer = sizeof(small) >= size ? small : g_malloc(MIN(65536, size));
-    while (size > 0) {
-        ssize_t count = MIN(65536, size);
-        ret = read_sync(ioc, buffer, MIN(65536, size));
-
-        if (ret < 0) {
-            goto cleanup;
-        }
-        size -= count;
-    }
-
- cleanup:
-    if (buffer != small) {
-        g_free(buffer);
-    }
-    return ret;
-}
-
 /* Send an option request.
  *
  * The request is for option @opt, with @data containing @len bytes of
@@ -333,7 +307,7 @@ static int nbd_receive_list(QIOChannel *ioc, const char *want, bool *match,
         return -1;
     }
     if (namelen != strlen(want)) {
-        if (drop_sync(ioc, len) < 0) {
+        if (nbd_drop(ioc, len) < 0) {
             error_setg(errp, "failed to skip export name with wrong length");
             nbd_send_opt_abort(ioc);
             return -1;
@@ -349,7 +323,7 @@ static int nbd_receive_list(QIOChannel *ioc, const char *want, bool *match,
     }
     name[namelen] = '\0';
     len -= namelen;
-    if (drop_sync(ioc, len) < 0) {
+    if (nbd_drop(ioc, len) < 0) {
         error_setg(errp, "failed to read export description");
         nbd_send_opt_abort(ioc);
         return -1;
@@ -616,7 +590,7 @@ int nbd_receive_negotiate(QIOChannel *ioc, const char *name, uint16_t *flags,
     }
 
     TRACE("Size is %" PRIu64 ", export flags %" PRIx16, *size, *flags);
-    if (zeroes && drop_sync(ioc, 124) < 0) {
+    if (zeroes && nbd_drop(ioc, 124) < 0) {
         error_setg(errp, "Failed to read reserved block");
         goto fail;
     }
