@@ -2116,7 +2116,7 @@
             'host_device', 'http', 'https', 'iscsi', 'luks', 'nbd', 'nfs',
             'null-aio', 'null-co', 'parallels', 'qcow', 'qcow2', 'qed',
             'quorum', 'raw', 'rbd', 'replication', 'sheepdog', 'ssh',
-            'vdi', 'vhdx', 'vmdk', 'vpc', 'vvfat' ] }
+            'vdi', 'vhdx', 'vmdk', 'vpc', 'vvfat', 'vma-drive' ] }
 
 ##
 # @BlockdevOptionsFile:
@@ -2866,6 +2866,21 @@
   'data': { '*offset': 'int', '*size': 'int' } }
 
 ##
+# @BlockdevOptionsVMADrive:
+#
+# Driver specific block device options for VMA Drives
+#
+# @filename: vma-drive path
+#
+# @size: drive size in bytes
+#
+# Since: 2.9
+##
+{ 'struct': 'BlockdevOptionsVMADrive',
+  'data': { 'filename': 'str',
+            'size': 'int' } }
+
+##
 # @BlockdevOptions:
 #
 # Options for creating a block device.  Many options are available for all
@@ -2927,7 +2942,8 @@
       'vhdx':       'BlockdevOptionsGenericFormat',
       'vmdk':       'BlockdevOptionsGenericCOWFormat',
       'vpc':        'BlockdevOptionsGenericFormat',
-      'vvfat':      'BlockdevOptionsVVFAT'
+      'vvfat':      'BlockdevOptionsVVFAT',
+      'vma-drive':  'BlockdevOptionsVMADrive'
   } }
 
 ##
