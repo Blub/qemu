@@ -320,6 +320,7 @@ numa=""
 tcmalloc="no"
 jemalloc="no"
 replication="yes"
+vma=""
 
 supported_cpu="no"
 supported_os="no"
@@ -1183,6 +1184,10 @@ for opt do
   ;;
   --enable-replication) replication="yes"
   ;;
+  --disable-vma) vma="no"
+  ;;
+  --enable-vma) vma="yes"
+  ;;
   *)
       echo "ERROR: unknown option $opt"
       echo "Try '$0 --help' for more information"
@@ -1427,6 +1432,7 @@ disabled with --disable-FEATURE, default is enabled if available:
   xfsctl          xfsctl support
   qom-cast-debug  cast debugging support
   tools           build qemu-io, qemu-nbd and qemu-image tools
+  vma             VMA archive backend
 
 NOTE: The object files are built at the place where configure is launched
 EOF
@@ -3705,6 +3711,23 @@ EOF
 fi
 
 ##########################################
+# vma probe
+if test "$vma" != "no" ; then
+  if $pkg_config --exact-version=0.1.0 vma; then
+    vma="yes"
+    vma_cflags=$($pkg_config --cflags vma)
+    vma_libs=$($pkg_config --libs vma)
+  else
+    if test "$vma" = "yes" ; then
+      feature_not_found "VMA Archive backend support" \
+          "Install libvma devel"
+    fi
+    vma="no"
+  fi
+fi
+
+
+##########################################
 # signalfd probe
 signalfd="no"
 cat > $TMPC << EOF
@@ -5146,6 +5169,7 @@ echo "tcmalloc support  $tcmalloc"
 echo "jemalloc support  $jemalloc"
 echo "avx2 optimization $avx2_opt"
 echo "replication support $replication"
+echo "VMA support       $vma"
 
 if test "$sdl_too_old" = "yes"; then
 echo "-> Your SDL version is too old - please upgrade to have SDL support"
@@ -5701,6 +5725,12 @@ if test "$libssh2" = "yes" ; then
   echo "CONFIG_LIBSSH2=m" >> $config_host_mak
   echo "LIBSSH2_CFLAGS=$libssh2_cflags" >> $config_host_mak
   echo "LIBSSH2_LIBS=$libssh2_libs" >> $config_host_mak
+fi
+
+if test "$vma" = "yes" ; then
+  echo "CONFIG_VMA=y" >> $config_host_mak
+  echo "VMA_CFLAGS=$vma_cflags" >> $config_host_mak
+  echo "VMA_LIBS=$vma_libs" >> $config_host_mak
 fi
 
 # USB host support

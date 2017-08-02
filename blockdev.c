@@ -31,10 +31,12 @@
  */
 
 #include "qemu/osdep.h"
+#include "qemu/uuid.h"
 #include "sysemu/block-backend.h"
 #include "sysemu/blockdev.h"
 #include "hw/block/block.h"
 #include "block/blockjob.h"
+#include "block/blockjob_int.h"
 #include "block/throttle-groups.h"
 #include "monitor/monitor.h"
 #include "qemu/error-report.h"
@@ -2930,6 +2932,502 @@ void qmp_block_resize(bool has_device, const char *device,
 out:
     blk_unref(blk);
     aio_context_release(aio_context);
+}
+
+/* PVE backup related function */
+
+static struct PVEBackupState {
+    Error *error;
+    bool cancel;
+    QemuUUID uuid;
+    char uuid_str[37];
+    int64_t speed;
+    time_t start_time;
+    time_t end_time;
+    char *backup_file;
+    Object *vmaobj;
+    GList *di_list;
+    size_t next_job;
+    size_t total;
+    size_t transferred;
+    size_t zero_bytes;
+} backup_state;
+
+typedef struct PVEBackupDevInfo {
+    BlockDriverState *bs;
+    size_t size;
+    uint8_t dev_id;
+    bool completed;
+    char targetfile[PATH_MAX];
+    BlockDriverState *target;
+} PVEBackupDevInfo;
+
+static void pvebackup_run_next_job(void);
+
+static void pvebackup_cleanup(void)
+{
+    backup_state.end_time = time(NULL);
+
+    if (backup_state.vmaobj) {
+        object_unparent(backup_state.vmaobj);
+        backup_state.vmaobj = NULL;
+    }
+
+    if (backup_state.di_list) {
+        GList *l = backup_state.di_list;
+        while (l) {
+            PVEBackupDevInfo *di = (PVEBackupDevInfo *)l->data;
+            l = g_list_next(l);
+            g_free(di);
+        }
+        g_list_free(backup_state.di_list);
+        backup_state.di_list = NULL;
+    }
+}
+
+static void pvebackup_complete_cb(void *opaque, int ret)
+{
+    PVEBackupDevInfo *di = opaque;
+
+    di->completed = true;
+
+    if (ret < 0 && !backup_state.error) {
+        error_setg(&backup_state.error, "job failed with err %d - %s",
+                   ret, strerror(-ret));
+    }
+
+    di->bs = NULL;
+    di->target = NULL;
+
+    if (backup_state.vmaobj) {
+        object_unparent(backup_state.vmaobj);
+        backup_state.vmaobj = NULL;
+    }
+
+    if (!backup_state.cancel) {
+        pvebackup_run_next_job();
+    }
+}
+
+static void pvebackup_cancel(void *opaque)
+{
+    backup_state.cancel = true;
+
+    if (!backup_state.error) {
+        error_setg(&backup_state.error, "backup cancelled");
+    }
+
+    if (backup_state.vmaobj) {
+        Error *err;
+        /* make sure vma writer does not block anymore */
+        if (!object_set_props(backup_state.vmaobj, &err, "blocked", "yes", NULL)) {
+            if (err) {
+                error_report_err(err);
+            }
+        }
+    }
+
+    GList *l = backup_state.di_list;
+    while (l) {
+        PVEBackupDevInfo *di = (PVEBackupDevInfo *)l->data;
+        l = g_list_next(l);
+        if (!di->completed && di->bs) {
+            BlockJob *job = di->bs->job;
+            if (job) {
+                if (!di->completed) {
+                    block_job_cancel_sync(job);
+                }
+            }
+        }
+    }
+
+    pvebackup_cleanup();
+}
+
+void qmp_backup_cancel(Error **errp)
+{
+    Coroutine *co = qemu_coroutine_create(pvebackup_cancel, NULL);
+    qemu_coroutine_enter(co);
+
+    while (backup_state.vmaobj) {
+        /* FIXME: Find something better for this */
+        aio_poll(qemu_get_aio_context(), true);
+    }
+}
+
+void vma_object_add_config_file(Object *obj, const char *name, 
+                                const char *contents, size_t len,
+                                Error **errp);
+static int config_to_vma(const char *file, BackupFormat format,
+                         Object *vmaobj,
+                         const char *backup_dir,
+                         Error **errp)
+{
+        char *cdata = NULL;
+        gsize clen = 0;
+        GError *err = NULL;
+        if (!g_file_get_contents(file, &cdata, &clen, &err)) {
+            error_setg(errp, "unable to read file '%s'", file);
+            return 1;
+        }
+
+        char *basename = g_path_get_basename(file);
+
+        if (format == BACKUP_FORMAT_VMA) {
+            vma_object_add_config_file(vmaobj, basename, cdata, clen, errp);
+        } else if (format == BACKUP_FORMAT_DIR) {
+            char config_path[PATH_MAX];
+            snprintf(config_path, PATH_MAX, "%s/%s", backup_dir, basename);
+            if (!g_file_set_contents(config_path, cdata, clen, &err)) {
+              error_setg(errp, "unable to write config file '%s'", config_path);
+                g_free(cdata);
+                g_free(basename);
+                return 1;
+            }
+        }
+
+        g_free(basename);
+        g_free(cdata);
+
+        return 0;
+}
+
+static void pvebackup_run_next_job(void)
+{
+    bool cancel = backup_state.error || backup_state.cancel;
+    GList *next = g_list_nth(backup_state.di_list, backup_state.next_job);
+    while (next) {
+        PVEBackupDevInfo *di = (PVEBackupDevInfo *)next->data;
+        backup_state.next_job++;
+        if (!di->completed && di->bs && di->bs->job) {
+            BlockJob *job = di->bs->job;
+            if (cancel) {
+                block_job_cancel(job);
+            } else {
+                block_job_resume(job);
+            }
+            return;
+        }
+        next = g_list_next(next);
+    }
+    pvebackup_cleanup();
+}
+
+UuidInfo *qmp_backup(const char *backup_file, bool has_format,
+                    BackupFormat format,
+                    bool has_config_file, const char *config_file,
+                    bool has_firewall_file, const char *firewall_file,
+                    bool has_devlist, const char *devlist,
+                    bool has_speed, int64_t speed, Error **errp)
+{
+    BlockBackend *blk;
+    BlockDriverState *bs = NULL;
+    const char *backup_dir = NULL;
+    Error *local_err = NULL;
+    QemuUUID uuid;
+    gchar **devs = NULL;
+    GList *di_list = NULL;
+    GList *l;
+    UuidInfo *uuid_info;
+    BlockJob *job;
+
+    if (backup_state.di_list || backup_state.vmaobj) {
+        error_set(errp, ERROR_CLASS_GENERIC_ERROR,
+                  "previous backup not finished");
+        return NULL;
+    }
+
+    /* Todo: try to auto-detect format based on file name */
+    format = has_format ? format : BACKUP_FORMAT_VMA;
+
+    if (has_devlist) {
+        devs = g_strsplit_set(devlist, ",;:", -1);
+
+        gchar **d = devs;
+        while (d && *d) {
+            blk = blk_by_name(*d);
+            if (blk) {
+                bs = blk_bs(blk);
+                if (bdrv_is_read_only(bs)) {
+                    error_setg(errp, "Node '%s' is read only", *d);
+                    goto err;
+                }
+                if (!bdrv_is_inserted(bs)) {
+                    error_setg(errp, QERR_DEVICE_HAS_NO_MEDIUM, *d);
+                    goto err;
+                }
+                PVEBackupDevInfo *di = g_new0(PVEBackupDevInfo, 1);
+                di->bs = bs;
+                di_list = g_list_append(di_list, di);
+            } else {
+                error_set(errp, ERROR_CLASS_DEVICE_NOT_FOUND,
+                          "Device '%s' not found", *d);
+                goto err;
+            }
+            d++;
+        }
+
+    } else {
+        BdrvNextIterator it;
+
+        bs = NULL;
+        for (bs = bdrv_first(&it); bs; bs = bdrv_next(&it)) {
+            if (!bdrv_is_inserted(bs) || bdrv_is_read_only(bs)) {
+                continue;
+            }
+
+            PVEBackupDevInfo *di = g_new0(PVEBackupDevInfo, 1);
+            di->bs = bs;
+            di_list = g_list_append(di_list, di);
+        }
+    }
+
+    if (!di_list) {
+        error_set(errp, ERROR_CLASS_GENERIC_ERROR, "empty device list");
+        goto err;
+    }
+
+    size_t total = 0;
+
+    l = di_list;
+    while (l) {
+        PVEBackupDevInfo *di = (PVEBackupDevInfo *)l->data;
+        l = g_list_next(l);
+        if (bdrv_op_is_blocked(di->bs, BLOCK_OP_TYPE_BACKUP_SOURCE, errp)) {
+            goto err;
+        }
+
+        ssize_t size = bdrv_getlength(di->bs);
+        if (size < 0) {
+            error_setg_errno(errp, -di->size, "bdrv_getlength failed");
+            goto err;
+        }
+        di->size = size;
+        total += size;
+    }
+
+    qemu_uuid_generate(&uuid);
+
+    if (format == BACKUP_FORMAT_VMA) {
+        char uuidstr[UUID_FMT_LEN+1];
+        qemu_uuid_unparse(&uuid, uuidstr);
+        uuidstr[UUID_FMT_LEN] = 0;
+        backup_state.vmaobj =
+            object_new_with_props("vma", object_get_objects_root(),
+                                  "vma-backup-obj", &local_err,
+                                  "filename", backup_file,
+                                  "uuid", uuidstr,
+                                  NULL);
+        if (!backup_state.vmaobj) {
+            if (local_err) {
+                error_propagate(errp, local_err);
+            }
+            goto err;
+        }
+
+        l = di_list;
+        while (l) {
+            QDict *options = qdict_new();
+
+            PVEBackupDevInfo *di = (PVEBackupDevInfo *)l->data;
+            l = g_list_next(l);
+
+            const char *devname = bdrv_get_device_name(di->bs);
+            snprintf(di->targetfile, PATH_MAX, "vma-backup-obj/%s.raw", devname);
+
+            qdict_put(options, "driver", qstring_from_str("vma-drive"));
+            qdict_put(options, "size", qint_from_int(di->size));
+            di->target = bdrv_open(di->targetfile, NULL, options, BDRV_O_RDWR, &local_err);
+            if (!di->target) {
+                error_propagate(errp, local_err);
+                goto err;
+            }
+        }
+    } else if (format == BACKUP_FORMAT_DIR) {
+        if (mkdir(backup_file, 0640) != 0) {
+            error_setg_errno(errp, errno, "can't create directory '%s'\n",
+                             backup_file);
+            goto err;
+        }
+        backup_dir = backup_file;
+
+        l = di_list;
+        while (l) {
+            PVEBackupDevInfo *di = (PVEBackupDevInfo *)l->data;
+            l = g_list_next(l);
+
+            const char *devname = bdrv_get_device_name(di->bs);
+            snprintf(di->targetfile, PATH_MAX, "%s/%s.raw", backup_dir, devname);
+
+            int flags = BDRV_O_RDWR;
+            bdrv_img_create(di->targetfile, "raw", NULL, NULL, NULL,
+                            di->size, flags, &local_err, false);
+            if (local_err) {
+                error_propagate(errp, local_err);
+                goto err;
+            }
+
+            di->target = bdrv_open(di->targetfile, NULL, NULL, flags, &local_err);
+            if (!di->target) {
+                error_propagate(errp, local_err);
+                goto err;
+            }
+        }
+    } else {
+       error_set(errp, ERROR_CLASS_GENERIC_ERROR, "unknown backup format");
+       goto err;
+    }
+
+    /* add configuration file to archive */
+    if (has_config_file) {
+      if(config_to_vma(config_file, format, backup_state.vmaobj, backup_dir, errp) != 0) {
+        goto err;
+      }
+    }
+
+    /* add firewall file to archive */
+    if (has_firewall_file) {
+      if(config_to_vma(firewall_file, format, backup_state.vmaobj, backup_dir, errp) != 0) {
+        goto err;
+      }
+    }
+    /* initialize global backup_state now */
+
+    backup_state.cancel = false;
+
+    if (backup_state.error) {
+        error_free(backup_state.error);
+        backup_state.error = NULL;
+    }
+
+    backup_state.speed = (has_speed && speed > 0) ? speed : 0;
+
+    backup_state.start_time = time(NULL);
+    backup_state.end_time = 0;
+
+    if (backup_state.backup_file) {
+        g_free(backup_state.backup_file);
+    }
+    backup_state.backup_file = g_strdup(backup_file);
+
+    memcpy(&backup_state.uuid, &uuid, sizeof(uuid));
+    qemu_uuid_unparse(&uuid, backup_state.uuid_str);
+
+    backup_state.di_list = di_list;
+    backup_state.next_job = 0;
+
+    backup_state.total = total;
+    backup_state.transferred = 0;
+    backup_state.zero_bytes = 0;
+
+    /* start all jobs (paused state) */
+    l = di_list;
+    while (l) {
+        PVEBackupDevInfo *di = (PVEBackupDevInfo *)l->data;
+        l = g_list_next(l);
+
+        job = backup_job_create(NULL, di->bs, di->target, speed, MIRROR_SYNC_MODE_FULL, NULL,
+                                false, BLOCKDEV_ON_ERROR_REPORT, BLOCKDEV_ON_ERROR_REPORT,
+                                BLOCK_JOB_DEFAULT,
+                                pvebackup_complete_cb, di, 2, NULL, &local_err);
+        if (di->target) {
+            bdrv_unref(di->target);
+            di->target = NULL;
+        }
+        if (!job || local_err != NULL) {
+            error_setg(&backup_state.error, "backup_job_create failed");
+            pvebackup_cancel(NULL);
+        } else {
+            block_job_start(job);
+        }
+    }
+
+    if (!backup_state.error) {
+        pvebackup_run_next_job(); // run one job
+    }
+
+    uuid_info = g_malloc0(sizeof(*uuid_info));
+    uuid_info->UUID = g_strdup(backup_state.uuid_str);
+
+    return uuid_info;
+
+err:
+
+    l = di_list;
+    while (l) {
+        PVEBackupDevInfo *di = (PVEBackupDevInfo *)l->data;
+        l = g_list_next(l);
+
+        if (di->target) {
+            bdrv_unref(di->target);
+        }
+
+        if (di->targetfile[0]) {
+            unlink(di->targetfile);
+        }
+        g_free(di);
+    }
+    g_list_free(di_list);
+
+    if (devs) {
+        g_strfreev(devs);
+    }
+
+    if (backup_state.vmaobj) {
+        object_unparent(backup_state.vmaobj);
+        backup_state.vmaobj = NULL;
+    }
+
+    if (backup_dir) {
+        rmdir(backup_dir);
+    }
+
+    return NULL;
+}
+
+BackupStatus *qmp_query_backup(Error **errp)
+{
+    BackupStatus *info = g_malloc0(sizeof(*info));
+
+    if (!backup_state.start_time) {
+        /* not started, return {} */
+        return info;
+    }
+
+    info->has_status = true;
+    info->has_start_time = true;
+    info->start_time = backup_state.start_time;
+
+    if (backup_state.backup_file) {
+        info->has_backup_file = true;
+        info->backup_file = g_strdup(backup_state.backup_file);
+    }
+
+    info->has_uuid = true;
+    info->uuid = g_strdup(backup_state.uuid_str);
+
+    if (backup_state.end_time) {
+        if (backup_state.error) {
+            info->status = g_strdup("error");
+            info->has_errmsg = true;
+            info->errmsg = g_strdup(error_get_pretty(backup_state.error));
+        } else {
+            info->status = g_strdup("done");
+        }
+        info->has_end_time = true;
+        info->end_time = backup_state.end_time;
+    } else {
+        info->status = g_strdup("active");
+    }
+
+    info->has_total = true;
+    info->total = backup_state.total;
+    info->has_zero_bytes = true;
+    info->zero_bytes = backup_state.zero_bytes;
+    info->has_transferred = true;
+    info->transferred = backup_state.transferred;
+
+    return info;
 }
 
 void qmp_block_stream(bool has_job_id, const char *job_id, const char *device,
