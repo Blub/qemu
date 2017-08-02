@@ -422,6 +422,7 @@ tcmalloc="no"
 jemalloc="no"
 replication="yes"
 vxhs=""
+vma=""
 
 supported_cpu="no"
 supported_os="no"
@@ -1313,6 +1314,10 @@ for opt do
   ;;
   --disable-git-update) git_update=no
   ;;
+  --disable-vma) vma="no"
+  ;;
+  --enable-vma) vma="yes"
+  ;;
   *)
       echo "ERROR: unknown option $opt"
       echo "Try '$0 --help' for more information"
@@ -1561,6 +1566,7 @@ disabled with --disable-FEATURE, default is enabled if available:
   crypto-afalg    Linux AF_ALG crypto backend driver
   vhost-user      vhost-user support
   capstone        capstone disassembler support
+  vma             VMA archive backend
 
 NOTE: The object files are built at the place where configure is launched
 EOF
@@ -3890,6 +3896,23 @@ EOF
 fi
 
 ##########################################
+# vma probe
+if test "$vma" != "no" ; then
+  if $pkg_config --exact-version=0.1.0 vma; then
+    vma="yes"
+    vma_cflags=$($pkg_config --cflags vma)
+    vma_libs=$($pkg_config --libs vma)
+  else
+    if test "$vma" = "yes" ; then
+      feature_not_found "VMA Archive backend support" \
+          "Install libvma devel"
+    fi
+    vma="no"
+  fi
+fi
+
+
+##########################################
 # signalfd probe
 signalfd="no"
 cat > $TMPC << EOF
@@ -5555,6 +5578,7 @@ echo "avx2 optimization $avx2_opt"
 echo "replication support $replication"
 echo "VxHS block device $vxhs"
 echo "capstone          $capstone"
+echo "VMA support       $vma"
 
 if test "$sdl_too_old" = "yes"; then
 echo "-> Your SDL version is too old - please upgrade to have SDL support"
@@ -5996,6 +6020,12 @@ if test "$libusb" = "yes" ; then
   echo "CONFIG_USB_LIBUSB=y" >> $config_host_mak
   echo "LIBUSB_CFLAGS=$libusb_cflags" >> $config_host_mak
   echo "LIBUSB_LIBS=$libusb_libs" >> $config_host_mak
+fi
+
+if test "$vma" = "yes" ; then
+  echo "CONFIG_VMA=y" >> $config_host_mak
+  echo "VMA_CFLAGS=$vma_cflags" >> $config_host_mak
+  echo "VMA_LIBS=$vma_libs" >> $config_host_mak
 fi
 
 if test "$usb_redir" = "yes" ; then
