@@ -149,7 +149,8 @@ static void block_job_pause(BlockJob *job)
     job->pause_count++;
 }
 
-static void block_job_resume(BlockJob *job)
+void block_job_resume(BlockJob *job);
+void block_job_resume(BlockJob *job)
 {
     assert(job->pause_count > 0);
     job->pause_count--;
