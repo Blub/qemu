@@ -1856,6 +1856,12 @@ L: qemu-block@nongnu.org
 S: Supported
 F: block/vvfat.c
 
+VMA
+M: Wolfgang Bumiller <w.bumiller@proxmox.com>.
+L: pve-devel@proxmox.com
+S: Supported
+F: block/vma.c
+
 Image format fuzzer
 M: Stefan Hajnoczi <stefanha@redhat.com>
 L: qemu-block@nongnu.org

@@ -87,6 +87,37 @@ STEXI
 Copy data from a backing file into a block device.
 ETEXI
 
+   {
+        .name       = "backup",
+        .args_type  = "directory:-d,backupfile:s,speed:o?,devlist:s?",
+        .params     = "[-d] backupfile [speed [devlist]]",
+        .help       = "create a VM Backup."
+		    "\n\t\t\t Use -d to dump data into a directory instead"
+		    "\n\t\t\t of using VMA format.",
+        .cmd = hmp_backup,
+    },
+
+STEXI
+@item backup
+@findex backup
+Create a VM backup.
+ETEXI
+
+    {
+        .name       = "backup_cancel",
+        .args_type  = "",
+        .params     = "",
+        .help       = "cancel the current VM backup",
+        .cmd = hmp_backup_cancel,
+    },
+
+STEXI
+@item backup_cancel
+@findex backup_cancel
+Cancel the current VM backup.
+
+ETEXI
+
     {
         .name       = "block_job_set_speed",
         .args_type  = "device:B,speed:o",
