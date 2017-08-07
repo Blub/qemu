@@ -757,7 +757,8 @@ void block_job_completed(BlockJob *job, int ret)
     }
 }
 
-static bool block_job_should_pause(BlockJob *job)
+bool block_job_should_pause(BlockJob *job);
+bool block_job_should_pause(BlockJob *job)
 {
     return job->pause_count > 0;
 }
