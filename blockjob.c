@@ -37,8 +37,8 @@
 #include "qemu/timer.h"
 #include "qapi-event.h"
 
-static void block_job_event_cancelled(BlockJob *job);
-static void block_job_event_completed(BlockJob *job, const char *msg);
+void block_job_event_cancelled(BlockJob *job);
+void block_job_event_completed(BlockJob *job, const char *msg);
 
 /* Transactional group of block jobs */
 struct BlockJobTxn {
@@ -573,7 +573,7 @@ static void block_job_iostatus_set_err(BlockJob *job, int error)
     }
 }
 
-static void block_job_event_cancelled(BlockJob *job)
+void block_job_event_cancelled(BlockJob *job)
 {
     if (block_job_is_internal(job)) {
         return;
@@ -587,7 +587,7 @@ static void block_job_event_cancelled(BlockJob *job)
                                         &error_abort);
 }
 
-static void block_job_event_completed(BlockJob *job, const char *msg)
+void block_job_event_completed(BlockJob *job, const char *msg)
 {
     if (block_job_is_internal(job)) {
         return;
@@ -724,7 +724,8 @@ void block_job_completed(BlockJob *job, int ret)
     }
 }
 
-static bool block_job_should_pause(BlockJob *job)
+bool block_job_should_pause(BlockJob *job);
+bool block_job_should_pause(BlockJob *job)
 {
     return job->pause_count > 0;
 }

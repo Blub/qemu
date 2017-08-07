@@ -60,6 +60,9 @@
 
 #define BLOCK_PROBE_BUF_SIZE        512
 
+typedef int BackupDumpFunc(void *opaque, BlockBackend *be,
+                           int64_t sector_num, int n_sectors, unsigned char *buf);
+
 enum BdrvTrackedRequestType {
     BDRV_TRACKED_READ,
     BDRV_TRACKED_WRITE,
@@ -984,6 +987,7 @@ BlockJob *backup_job_create(const char *job_id, BlockDriverState *bs,
                             BlockdevOnError on_source_error,
                             BlockdevOnError on_target_error,
                             int creation_flags,
+                            BackupDumpFunc *dump_cb,
                             BlockCompletionFunc *cb, void *opaque,
                             int pause_count,
                             BlockJobTxn *txn, Error **errp);
