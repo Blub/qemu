@@ -531,6 +531,7 @@ static void replication_start(ReplicationState *rs, ReplicationMode mode,
                                 0, MIRROR_SYNC_MODE_NONE, NULL, false,
                                 BLOCKDEV_ON_ERROR_REPORT,
                                 BLOCKDEV_ON_ERROR_REPORT, BLOCK_JOB_INTERNAL,
+                                NULL,
                                 backup_job_completed, bs, 0, NULL, &local_err);
         if (local_err) {
             error_propagate(errp, local_err);

@@ -14,6 +14,7 @@ block-obj-y += block.o blockjob.o
 block-obj-y += block/
 block-obj-y += qemu-io-cmds.o
 block-obj-$(CONFIG_REPLICATION) += replication.o
+block-obj-y += vma-writer.o
 
 block-obj-m = block/
 
