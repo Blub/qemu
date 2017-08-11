@@ -55,7 +55,7 @@ static int protocol_client_auth_plain(VncState *vs, uint8_t *data, size_t len)
 
 	VNC_DEBUG("AUTH PLAIN username: %s pw: %s\n", username, passwd);
 
-	if (pve_auth_verify(clientip->u.inet.data->host, username, passwd) == 0) {
+	if (pve_auth_verify(clientip->u.inet.host, username, passwd) == 0) {
 		vnc_write_u32(vs, 0); /* Accept auth completion */
 		start_client_init(vs);
 		qapi_free_SocketAddress(clientip);
