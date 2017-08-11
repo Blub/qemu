@@ -105,12 +105,10 @@ static int64_t zeroinit_getlength(BlockDriverState *bs)
     return bdrv_getlength(bs->file->bs);
 }
 
-static BlockAIOCB *zeroinit_aio_readv(BlockDriverState *bs,
-        int64_t sector_num, QEMUIOVector *qiov, int nb_sectors,
-        BlockCompletionFunc *cb, void *opaque)
+static coroutine_fn int zeroinit_co_readv(BlockDriverState *bs,
+        int64_t sector_num, int nb_sectors, QEMUIOVector *qiov)
 {
-    return bdrv_aio_readv(bs->file, sector_num, qiov, nb_sectors,
-                          cb, opaque);
+    return bdrv_co_readv(bs->file, sector_num, nb_sectors, qiov);
 }
 
 static int coroutine_fn zeroinit_co_pwrite_zeroes(BlockDriverState *bs, int64_t offset,
@@ -122,23 +120,14 @@ static int coroutine_fn zeroinit_co_pwrite_zeroes(BlockDriverState *bs, int64_t 
     return bdrv_pwrite_zeroes(bs->file, offset, count, flags);
 }
 
-static BlockAIOCB *zeroinit_aio_writev(BlockDriverState *bs,
-        int64_t sector_num, QEMUIOVector *qiov, int nb_sectors,
-        BlockCompletionFunc *cb, void *opaque)
+static coroutine_fn int zeroinit_co_writev(BlockDriverState *bs,
+        int64_t sector_num, int nb_sectors, QEMUIOVector *qiov)
 {
     BDRVZeroinitState *s = bs->opaque;
     int64_t extents = (sector_num << BDRV_SECTOR_BITS) + ((nb_sectors + 1) << BDRV_SECTOR_BITS);
     if (extents > s->extents)
         s->extents = extents;
-    return bdrv_aio_writev(bs->file, sector_num, qiov, nb_sectors,
-                           cb, opaque);
-}
-
-static BlockAIOCB *zeroinit_aio_flush(BlockDriverState *bs,
-                                       BlockCompletionFunc *cb,
-                                       void *opaque)
-{
-    return bdrv_aio_flush(bs->file->bs, cb, opaque);
+    return bdrv_co_writev(bs->file, sector_num, nb_sectors, qiov);
 }
 
 static bool zeroinit_recurse_is_first_non_filter(BlockDriverState *bs,
@@ -172,9 +161,10 @@ static int coroutine_fn zeroinit_co_pdiscard(BlockDriverState *bs,
     return bdrv_co_pdiscard(bs->file->bs, offset, count);
 }
 
-static int zeroinit_truncate(BlockDriverState *bs, int64_t offset)
+static int zeroinit_truncate(BlockDriverState *bs, int64_t offset,
+                             PreallocMode prealloc, Error **errp)
 {
-    return bdrv_truncate(bs->file, offset);
+    return bdrv_truncate(bs->file, offset, prealloc, errp);
 }
 
 static int zeroinit_get_info(BlockDriverState *bs, BlockDriverInfo *bdi)
@@ -195,9 +185,8 @@ static BlockDriver bdrv_zeroinit = {
     .bdrv_co_flush_to_disk            = zeroinit_co_flush,
 
     .bdrv_co_pwrite_zeroes            = zeroinit_co_pwrite_zeroes,
-    .bdrv_aio_writev                  = zeroinit_aio_writev,
-    .bdrv_aio_readv                   = zeroinit_aio_readv,
-    .bdrv_aio_flush                   = zeroinit_aio_flush,
+    .bdrv_co_writev                   = zeroinit_co_writev,
+    .bdrv_co_readv                    = zeroinit_co_readv,
 
     .is_filter                        = true,
     .bdrv_recurse_is_first_non_filter = zeroinit_recurse_is_first_non_filter,
