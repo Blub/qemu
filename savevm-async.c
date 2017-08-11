@@ -9,6 +9,9 @@
 #include "migration/qemu-file.h"
 #include "qom/qom-qobject.h"
 #include "migration/migration.h"
+#include "migration/savevm.h"
+#include "migration/snapshot.h"
+#include "migration/global_state.h"
 #include "block/snapshot.h"
 #include "block/qapi.h"
 #include "block/block.h"
@@ -221,10 +224,10 @@ static void *process_savevm_thread(void *opaque)
     rcu_register_thread();
 
     qemu_savevm_state_header(snap_state.file);
-    ret = qemu_savevm_state_begin(snap_state.file);
+    ret = qemu_savevm_state_setup(snap_state.file);
 
     if (ret < 0) {
-        save_snapshot_error("qemu_savevm_state_begin failed");
+        save_snapshot_error("qemu_savevm_state_setup failed");
         rcu_unregister_thread();
         return NULL;
     }
@@ -260,7 +263,7 @@ static void *process_savevm_thread(void *opaque)
                 break;
             }
             DPRINTF("savevm inerate finished\n");
-            qemu_savevm_state_complete_precopy(snap_state.file, false);
+            qemu_savevm_state_complete_precopy(snap_state.file, false, false);
             qemu_savevm_state_cleanup();
             DPRINTF("save complete\n");
             break;
@@ -545,7 +548,7 @@ int load_state_from_blockdev(const char *filename)
         goto the_end;
     }
 
-    qemu_system_reset(VMRESET_SILENT);
+    qemu_system_reset(SHUTDOWN_CAUSE_NONE);
     ret = qemu_loadvm_state(f);
 
     qemu_fclose(f);
