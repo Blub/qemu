@@ -19,7 +19,6 @@
 #include "qemu/error-report.h"
 #include "qemu/main-loop.h"
 #include "qapi/qmp/qstring.h"
-#include "sysemu/char.h" /* qstring_from_str */
 #include "sysemu/block-backend.h"
 
 static void help(void)
@@ -299,7 +298,7 @@ static int extract_content(int argc, char **argv)
                 printf("DEVINFO %s %zd\n", devfn, di->size);
 
                 bdrv_img_create(devfn, "raw", NULL, NULL, NULL, di->size,
-                                flags, &errp, 0);
+                                flags, 0, &errp);
                 if (errp) {
                     g_error("can't create file %s: %s", devfn,
                             error_get_pretty(errp));
