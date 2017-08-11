@@ -3219,6 +3219,7 @@ static int config_to_vma(const char *file, BackupFormat format,
 }
 
 bool block_job_should_pause(BlockJob *job);
+void block_job_resume(BlockJob *job);
 static void pvebackup_run_next_job(void)
 {
     GList *l = backup_state.di_list;
@@ -3379,7 +3380,7 @@ UuidInfo *qmp_backup(const char *backup_file, bool has_format,
 
             int flags = BDRV_O_RDWR;
             bdrv_img_create(di->targetfile, "raw", NULL, NULL, NULL,
-                            di->size, flags, &local_err, false);
+                            di->size, flags, false, &local_err);
             if (local_err) {
                 error_propagate(errp, local_err);
                 goto err;
