@@ -5,6 +5,7 @@
 #include "sysemu/sysemu.h"
 #include "qmp-commands.h"
 #include "qemu-options.h"
+#include "exec/cpu-common.h"
 #include "migration/qemu-file.h"
 #include "qom/qom-qobject.h"
 #include "migration/migration.h"
@@ -104,11 +105,13 @@ static int save_snapshot_cleanup(void)
     }
 
     if (snap_state.target) {
+        Error *err = NULL;
         /* try to truncate, but ignore errors (will fail on block devices).
          * note: bdrv_read() need whole blocks, so we round up
          */
         size_t size = (snap_state.bs_pos + BDRV_SECTOR_SIZE) & BDRV_SECTOR_MASK;
-        blk_truncate(snap_state.target, size);
+        (void)blk_truncate(snap_state.target, size, PREALLOC_MODE_OFF, &err);
+        error_free(err);
         blk_op_unblock_all(snap_state.target, snap_state.blocker);
         error_free(snap_state.blocker);
         snap_state.blocker = NULL;
@@ -215,15 +218,10 @@ static void *process_savevm_thread(void *opaque)
     int ret;
     int64_t maxlen;
 
-    MigrationParams params = {
-        .blk = 0,
-        .shared = 0
-    };
-
     rcu_register_thread();
 
     qemu_savevm_state_header(snap_state.file);
-    ret = qemu_savevm_state_begin(snap_state.file, &params);
+    ret = qemu_savevm_state_begin(snap_state.file);
 
     if (ret < 0) {
         save_snapshot_error("qemu_savevm_state_begin failed");
