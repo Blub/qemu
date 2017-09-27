@@ -139,12 +139,12 @@ static int nbd_co_send_request(BlockDriverState *bs,
     request->handle = INDEX_TO_HANDLE(s, i);
 
     if (s->quit) {
-        qemu_co_mutex_unlock(&s->send_mutex);
-        return -EIO;
+        rc = -EIO;
+        goto err;
     }
     if (!s->ioc) {
-        qemu_co_mutex_unlock(&s->send_mutex);
-        return -EPIPE;
+        rc = -EPIPE;
+        goto err;
     }
 
     if (qiov) {
@@ -161,8 +161,13 @@ static int nbd_co_send_request(BlockDriverState *bs,
     } else {
         rc = nbd_send_request(s->ioc, request);
     }
+
+err:
     if (rc < 0) {
         s->quit = true;
+        s->requests[i].coroutine = NULL;
+        s->in_flight--;
+        qemu_co_queue_next(&s->free_sema);
     }
     qemu_co_mutex_unlock(&s->send_mutex);
     return rc;
@@ -196,13 +201,6 @@ static void nbd_co_receive_reply(NBDClientSession *s,
         /* Tell the read handler to read another header.  */
         s->reply.handle = 0;
     }
-}
-
-static void nbd_coroutine_end(BlockDriverState *bs,
-                              NBDRequest *request)
-{
-    NBDClientSession *s = nbd_get_client_session(bs);
-    int i = HANDLE_TO_INDEX(s, request->handle);
 
     s->requests[i].coroutine = NULL;
 
@@ -238,7 +236,6 @@ int nbd_client_co_preadv(BlockDriverState *bs, uint64_t offset,
     } else {
         nbd_co_receive_reply(client, &request, &reply, qiov);
     }
-    nbd_coroutine_end(bs, &request);
     return -reply.error;
 }
 
@@ -267,7 +264,6 @@ int nbd_client_co_pwritev(BlockDriverState *bs, uint64_t offset,
     } else {
         nbd_co_receive_reply(client, &request, &reply, NULL);
     }
-    nbd_coroutine_end(bs, &request);
     return -reply.error;
 }
 
@@ -301,7 +297,6 @@ int nbd_client_co_pwrite_zeroes(BlockDriverState *bs, int64_t offset,
     } else {
         nbd_co_receive_reply(client, &request, &reply, NULL);
     }
-    nbd_coroutine_end(bs, &request);
     return -reply.error;
 }
 
@@ -325,7 +320,6 @@ int nbd_client_co_flush(BlockDriverState *bs)
     } else {
         nbd_co_receive_reply(client, &request, &reply, NULL);
     }
-    nbd_coroutine_end(bs, &request);
     return -reply.error;
 }
 
@@ -350,7 +344,6 @@ int nbd_client_co_pdiscard(BlockDriverState *bs, int64_t offset, int count)
     } else {
         nbd_co_receive_reply(client, &request, &reply, NULL);
     }
-    nbd_coroutine_end(bs, &request);
     return -reply.error;
 
 }
