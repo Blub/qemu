@@ -71,7 +71,7 @@ static coroutine_fn void nbd_read_reply_entry(void *opaque)
     uint64_t i;
     int ret;
 
-    for (;;) {
+    while (!s->quit) {
         assert(s->reply.handle == 0);
         ret = nbd_receive_reply(s->ioc, &s->reply);
         if (ret <= 0) {
@@ -102,6 +102,9 @@ static coroutine_fn void nbd_read_reply_entry(void *opaque)
         qemu_coroutine_yield();
     }
 
+    if (ret < 0) {
+        s->quit = true;
+    }
     nbd_recv_coroutines_enter_all(s);
     s->read_reply_co = NULL;
 }
@@ -130,6 +133,10 @@ static int nbd_co_send_request(BlockDriverState *bs,
     assert(i < MAX_NBD_REQUESTS);
     request->handle = INDEX_TO_HANDLE(s, i);
 
+    if (s->quit) {
+        qemu_co_mutex_unlock(&s->send_mutex);
+        return -EIO;
+    }
     if (!s->ioc) {
         qemu_co_mutex_unlock(&s->send_mutex);
         return -EPIPE;
@@ -138,7 +145,7 @@ static int nbd_co_send_request(BlockDriverState *bs,
     if (qiov) {
         qio_channel_set_cork(s->ioc, true);
         rc = nbd_send_request(s->ioc, request);
-        if (rc >= 0) {
+        if (rc >= 0 && !s->quit) {
             ret = nbd_wr_syncv(s->ioc, qiov->iov, qiov->niov, request->len,
                                false);
             if (ret != request->len) {
@@ -148,6 +155,9 @@ static int nbd_co_send_request(BlockDriverState *bs,
         qio_channel_set_cork(s->ioc, false);
     } else {
         rc = nbd_send_request(s->ioc, request);
+    }
+    if (rc < 0) {
+        s->quit = true;
     }
     qemu_co_mutex_unlock(&s->send_mutex);
     return rc;
@@ -163,8 +173,7 @@ static void nbd_co_receive_reply(NBDClientSession *s,
     /* Wait until we're woken up by nbd_read_reply_entry.  */
     qemu_coroutine_yield();
     *reply = s->reply;
-    if (reply->handle != request->handle ||
-        !s->ioc) {
+    if (reply->handle != request->handle || !s->ioc || s->quit) {
         reply->error = EIO;
     } else {
         if (qiov && reply->error == 0) {
