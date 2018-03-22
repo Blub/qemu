@@ -20,6 +20,7 @@
 #include "qemu/main-loop.h"
 #include "qemu/cutils.h"
 #include "qapi/qmp/qstring.h"
+#include "qapi/qmp/qbool.h"
 #include "sysemu/block-backend.h"
 
 static void help(void)
@@ -135,6 +136,7 @@ typedef struct RestoreMap {
     char *format;
     uint64_t throttling_bps;
     char *throttling_group;
+    char *cache;
     bool write_zero;
 } RestoreMap;
 
@@ -242,6 +244,7 @@ static int extract_content(int argc, char **argv)
             char *format = NULL;
             char *bps = NULL;
             char *group = NULL;
+            char *cache = NULL;
             if (!line || line[0] == '\0' || !strcmp(line, "done\n")) {
                 break;
             }
@@ -256,7 +259,8 @@ static int extract_content(int argc, char **argv)
             while (1) {
                 if (!try_parse_option(&line, "format", &format, inbuf) &&
                     !try_parse_option(&line, "throttling.bps", &bps, inbuf) &&
-                    !try_parse_option(&line, "throttling.group", &group, inbuf))
+                    !try_parse_option(&line, "throttling.group", &group, inbuf) &&
+                    !try_parse_option(&line, "cache", &cache, inbuf))
                 {
                     break;
                 }
@@ -293,6 +297,7 @@ static int extract_content(int argc, char **argv)
             map->format = format;
             map->throttling_bps = bps_value;
             map->throttling_group = group;
+            map->cache = cache;
             map->write_zero = write_zero;
 
             g_hash_table_insert(devmap, map->devname, map);
@@ -322,6 +327,7 @@ static int extract_content(int argc, char **argv)
             const char *format = NULL;
             uint64_t throttling_bps = 0;
             const char *throttling_group = NULL;
+            const char *cache = NULL;
             int flags = BDRV_O_RDWR | BDRV_O_NO_FLUSH;
             bool write_zero = true;
 
@@ -335,6 +341,7 @@ static int extract_content(int argc, char **argv)
                 format = map->format;
                 throttling_bps = map->throttling_bps;
                 throttling_group = map->throttling_group;
+                cache = map->cache;
                 write_zero = map->write_zero;
             } else {
                 devfn = g_strdup_printf("%s/tmp-disk-%s.raw",
@@ -356,6 +363,7 @@ static int extract_content(int argc, char **argv)
 
 	    size_t devlen = strlen(devfn);
 	    QDict *options = NULL;
+            bool writethrough;
             if (format) {
                 /* explicit format from commandline */
                 options = qdict_new();
@@ -370,10 +378,17 @@ static int extract_content(int argc, char **argv)
 		options = qdict_new();
 		qdict_put(options, "driver", qstring_from_str("raw"));
 	    }
+            if (cache && bdrv_parse_cache_mode(cache, &flags, &writethrough)) {
+                g_error("invalid cache option: %s\n", cache);
+            }
 
 	    if (errp || !(blk = blk_new_open(devfn, NULL, options, flags, &errp))) {
                 g_error("can't open file %s - %s", devfn,
                         error_get_pretty(errp));
+            }
+
+            if (cache) {
+                blk_set_enable_write_cache(blk, !writethrough);
             }
 
             if (throttling_group) {
