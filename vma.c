@@ -328,7 +328,7 @@ static int extract_content(int argc, char **argv)
             uint64_t throttling_bps = 0;
             const char *throttling_group = NULL;
             const char *cache = NULL;
-            int flags = BDRV_O_RDWR | BDRV_O_NO_FLUSH;
+            int flags = BDRV_O_RDWR;
             bool write_zero = true;
 
             if (readmap) {
